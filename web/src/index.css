@@ -3,5 +3,40 @@
 @tailwind utilities;
 
 body {
-  @apply bg-dark-900 text-white font-sans antialiased;
+  @apply bg-dark-950 text-white font-sans antialiased;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
+  background-attachment: fixed;
+}
+
+.glass {
+  background: rgba(26, 26, 26, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-red {
+  background: rgba(255, 8, 68, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 8, 68, 0.2);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.shimmer {
+  animation: shimmer 3s infinite;
+  background: linear-gradient(to right,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 100%);
+  background-size: 1000px 100%;
 }
