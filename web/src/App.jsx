@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Square, Activity, Terminal, Settings, Youtube, CheckCircle, AlertCircle, Sparkles, TrendingUp } from 'lucide-react';
+import { Play, Square, Activity, Terminal, Settings, Youtube, CheckCircle, AlertCircle, Sparkles, TrendingUp, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -88,29 +88,31 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen bg-dark-950 text-white p-4 md:p-8 font-sans selection:bg-rose-500/30 relative overflow-hidden">
+        <div className="min-h-screen bg-dark-900 text-white p-4 md:p-8 font-sans selection:bg-crimson-500/30 relative overflow-hidden">
             {/* Animated Background Elements */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden">
                 <motion.div
-                    className="absolute top-20 -left-20 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl"
+                    className="absolute top-20 right-20 w-[500px] h-[500px] bg-crimson-500/20 rounded-full blur-[100px]"
                     animate={{
                         scale: [1, 1.2, 1],
-                        opacity: [0.3, 0.5, 0.3],
+                        x: [0, 50, 0],
+                        y: [0, 30, 0],
                     }}
                     transition={{
-                        duration: 8,
+                        duration: 10,
                         repeat: Infinity,
                         ease: "easeInOut"
                     }}
                 />
                 <motion.div
-                    className="absolute bottom-20 -right-20 w-96 h-96 bg-crimson-500/10 rounded-full blur-3xl"
+                    className="absolute bottom-20 left-20 w-[500px] h-[500px] bg-rose-500/15 rounded-full blur-[100px]"
                     animate={{
                         scale: [1.2, 1, 1.2],
-                        opacity: [0.5, 0.3, 0.5],
+                        x: [0, -30, 0],
+                        y: [0, 50, 0],
                     }}
                     transition={{
-                        duration: 8,
+                        duration: 12,
                         repeat: Infinity,
                         ease: "easeInOut",
                         delay: 1
@@ -118,72 +120,73 @@ function App() {
                 />
             </div>
 
-            <div className="max-w-7xl mx-auto space-y-6 relative z-10">
+            <div className="max-w-7xl mx-auto space-y-8 relative z-10">
                 {/* Header */}
                 <motion.header
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center justify-between pb-6 border-b border-white/10"
+                    className="flex items-center justify-between pb-6 border-b border-white/20"
                 >
                     <div className="flex items-center gap-4">
                         <motion.div
-                            className="p-3 bg-gradient-red rounded-2xl shadow-glow-red"
+                            className="p-4 bg-gradient-red rounded-2xl shadow-glow-red-lg"
                             whileHover={{ scale: 1.05, rotate: 5 }}
                             whileTap={{ scale: 0.95 }}
                         >
-                            <Youtube className="w-8 h-8 text-white" />
+                            <Youtube className="w-10 h-10 text-white drop-shadow-lg" />
                         </motion.div>
                         <div>
-                            <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-white via-rose-400 to-crimson-500 bg-clip-text text-transparent">
-                                YouTube Automation Agent
+                            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white drop-shadow-lg">
+                                YouTube Automation
                             </h1>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-3 mt-2">
                                 <motion.div
-                                    className={cn("w-2 h-2 rounded-full", readyState === ReadyState.OPEN ? "bg-green-500" : "bg-rose-500")}
+                                    className={cn("w-2.5 h-2.5 rounded-full shadow-lg",
+                                        readyState === ReadyState.OPEN ? "bg-green-400 shadow-green-400/50" : "bg-crimson-500 shadow-crimson-500/50"
+                                    )}
                                     animate={{
-                                        scale: [1, 1.2, 1],
-                                        opacity: [1, 0.5, 1],
+                                        scale: [1, 1.3, 1],
                                     }}
                                     transition={{
                                         duration: 2,
                                         repeat: Infinity,
                                     }}
                                 />
-                                <span className="text-sm text-gray-400 font-medium">
+                                <span className="text-base text-gray-300 font-semibold">
                                     {readyState === ReadyState.OPEN ? "System Online" : "Disconnected"}
                                 </span>
                             </div>
                         </div>
                     </div>
                     <motion.button
-                        className="p-3 glass rounded-xl hover:glass-red transition-all duration-300"
-                        whileHover={{ scale: 1.05 }}
+                        className="p-4 glass rounded-2xl hover:glass-red transition-all duration-300"
+                        whileHover={{ scale: 1.05, rotate: 90 }}
                         whileTap={{ scale: 0.95 }}
                     >
-                        <Settings className="w-6 h-6 text-gray-400" />
+                        <Settings className="w-7 h-7 text-white" />
                     </motion.button>
                 </motion.header>
 
                 {/* Main Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Status Card */}
                     <div className="lg:col-span-2 space-y-6">
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 0.1 }}
-                            className="glass rounded-3xl p-8 relative overflow-hidden group"
+                            className="glass rounded-3xl p-10 relative overflow-hidden group border border-white/20"
                         >
-                            {/* Animated gradient overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 via-transparent to-crimson-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                            {/* Gradient overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-br from-crimson-500/10 via-transparent to-rose-500/10" />
 
                             <div className="relative z-10">
-                                <h2 className="text-gray-400 font-medium mb-3 flex items-center gap-2">
-                                    <Activity className="w-5 h-5" />
+                                <h2 className="text-gray-300 font-bold text-lg mb-4 flex items-center gap-3">
+                                    <Zap className="w-6 h-6 text-crimson-400" />
                                     Current Activity
                                 </h2>
                                 <motion.div
-                                    className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-white to-rose-400 bg-clip-text text-transparent leading-tight min-h-[4rem] flex items-center"
+                                    className="text-4xl md:text-5xl font-black text-white leading-tight min-h-[5rem] flex items-center drop-shadow-lg"
                                     key={status}
                                     initial={{ opacity: 0, x: -20 }}
                                     animate={{ opacity: 1, x: 0 }}
@@ -199,10 +202,10 @@ function App() {
                                             initial={{ opacity: 0, scaleX: 0 }}
                                             animate={{ opacity: 1, scaleX: 1 }}
                                             exit={{ opacity: 0, scaleX: 0 }}
-                                            className="h-1 bg-gradient-to-r from-rose-500/20 to-crimson-500/20 mt-6 rounded-full overflow-hidden"
+                                            className="h-2 bg-dark-700 mt-8 rounded-full overflow-hidden"
                                         >
                                             <motion.div
-                                                className="h-full bg-gradient-red"
+                                                className="h-full bg-gradient-red shadow-glow-red"
                                                 initial={{ x: '-100%' }}
                                                 animate={{ x: '100%' }}
                                                 transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
@@ -218,32 +221,32 @@ function App() {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.2 }}
-                            className="grid grid-cols-2 gap-4"
+                            className="grid grid-cols-2 gap-6"
                         >
                             <motion.button
                                 onClick={startAgent}
                                 disabled={isRunning}
-                                className="group relative overflow-hidden rounded-2xl bg-gradient-red p-6 font-bold text-xl hover:shadow-glow-red-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
-                                whileHover={{ scale: isRunning ? 1 : 1.02 }}
-                                whileTap={{ scale: isRunning ? 1 : 0.98 }}
+                                className="group relative overflow-hidden rounded-3xl bg-gradient-red p-8 font-black text-2xl shadow-glow-red hover:shadow-glow-red-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-glow-red"
+                                whileHover={{ scale: isRunning ? 1 : 1.03 }}
+                                whileTap={{ scale: isRunning ? 1 : 0.97 }}
                             >
                                 <div className="absolute inset-0 shimmer opacity-0 group-hover:opacity-100" />
-                                <div className="flex items-center justify-center gap-3 relative z-10">
-                                    <Play className="w-6 h-6 fill-current" />
-                                    Start Automation
+                                <div className="flex items-center justify-center gap-3 relative z-10 text-white">
+                                    <Play className="w-8 h-8 fill-current drop-shadow-lg" />
+                                    <span className="drop-shadow-lg">Start</span>
                                 </div>
                             </motion.button>
 
                             <motion.button
                                 onClick={stopAgent}
                                 disabled={!isRunning}
-                                className="rounded-2xl glass border border-rose-500/30 text-white p-6 font-bold text-xl hover:glass-red hover:border-rose-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                whileHover={{ scale: !isRunning ? 1 : 1.02 }}
-                                whileTap={{ scale: !isRunning ? 1 : 0.98 }}
+                                className="rounded-3xl glass border-2 border-crimson-500/50 text-white p-8 font-black text-2xl hover:glass-red hover:border-crimson-500 hover:shadow-glow-red transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                whileHover={{ scale: !isRunning ? 1 : 1.03 }}
+                                whileTap={{ scale: !isRunning ? 1 : 0.97 }}
                             >
-                                <div className="flex items-center justify-center gap-3">
-                                    <Square className="w-6 h-6 fill-current" />
-                                    Stop
+                                <div className="flex items-center justify-center gap-3 drop-shadow-lg">
+                                    <Square className="w-8 h-8 fill-current" />
+                                    <span>Stop</span>
                                 </div>
                             </motion.button>
                         </motion.div>
@@ -254,33 +257,33 @@ function App() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.3 }}
-                        className="glass rounded-3xl p-6 space-y-6"
+                        className="glass rounded-3xl p-8 space-y-6 border border-white/20"
                     >
-                        <h3 className="font-bold text-xl flex items-center gap-2">
-                            <Sparkles className="w-5 h-5 text-rose-500" />
+                        <h3 className="font-black text-2xl flex items-center gap-3 text-white">
+                            <Sparkles className="w-7 h-7 text-crimson-400" />
                             Quick Stats
                         </h3>
 
                         {/* Auth Status */}
                         <motion.div
                             className={cn(
-                                "p-5 rounded-2xl border transition-all duration-300",
+                                "p-6 rounded-2xl border-2 transition-all duration-300",
                                 isAuthenticated
-                                    ? "bg-green-500/10 border-green-500/30"
-                                    : "glass-red border-rose-500/30"
+                                    ? "bg-green-500/20 border-green-400/50 shadow-lg shadow-green-500/20"
+                                    : "glass-red border-crimson-500/50 shadow-lg shadow-crimson-500/20"
                             )}
                             whileHover={{ scale: 1.02 }}
                         >
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="text-sm font-medium text-gray-300">YouTube Connection</div>
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-base font-bold text-white">YouTube Connection</div>
                                 <motion.div
                                     animate={{ rotate: isAuthenticated ? 0 : 360 }}
                                     transition={{ duration: 2, repeat: isAuthenticated ? 0 : Infinity, ease: "linear" }}
                                 >
                                     {isAuthenticated ? (
-                                        <CheckCircle className="w-5 h-5 text-green-500" />
+                                        <CheckCircle className="w-7 h-7 text-green-400 drop-shadow-lg" />
                                     ) : (
-                                        <AlertCircle className="w-5 h-5 text-rose-500" />
+                                        <AlertCircle className="w-7 h-7 text-crimson-400 drop-shadow-lg" />
                                     )}
                                 </motion.div>
                             </div>
@@ -291,9 +294,9 @@ function App() {
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
-                                        className="text-green-400 text-sm font-medium"
+                                        className="text-green-300 text-base font-bold"
                                     >
-                                        Connected
+                                        ✓ Connected
                                     </motion.div>
                                 ) : (
                                     <motion.button
@@ -302,9 +305,9 @@ function App() {
                                         animate={{ opacity: 1, y: 0 }}
                                         exit={{ opacity: 0, y: -10 }}
                                         onClick={authenticate}
-                                        className="w-full py-3 bg-gradient-red hover:shadow-glow-red rounded-xl text-sm font-bold transition-all duration-300"
-                                        whileHover={{ scale: 1.02 }}
-                                        whileTap={{ scale: 0.98 }}
+                                        className="w-full py-4 bg-gradient-red hover:shadow-glow-red rounded-xl text-base font-black transition-all duration-300 text-white"
+                                        whileHover={{ scale: 1.03 }}
+                                        whileTap={{ scale: 0.97 }}
                                     >
                                         Connect Channel
                                     </motion.button>
@@ -314,21 +317,21 @@ function App() {
 
                         <div className="space-y-4">
                             <motion.div
-                                className="p-5 glass rounded-2xl border border-white/5 hover:border-rose-500/30 transition-all duration-300"
+                                className="p-6 glass rounded-2xl border border-white/20 hover:border-crimson-500/50 hover:shadow-lg hover:shadow-crimson-500/10 transition-all duration-300"
                                 whileHover={{ scale: 1.02 }}
                             >
-                                <div className="text-sm text-gray-400 mb-2">Uploads Today</div>
-                                <div className="text-3xl font-bold bg-gradient-to-r from-white to-rose-400 bg-clip-text text-transparent">0</div>
+                                <div className="text-sm text-gray-300 font-semibold mb-2">Uploads Today</div>
+                                <div className="text-5xl font-black text-white drop-shadow-lg">0</div>
                             </motion.div>
                             <motion.div
-                                className="p-5 glass rounded-2xl border border-white/5 hover:border-rose-500/30 transition-all duration-300"
+                                className="p-6 glass rounded-2xl border border-white/20 hover:border-crimson-500/50 hover:shadow-lg hover:shadow-crimson-500/10 transition-all duration-300"
                                 whileHover={{ scale: 1.02 }}
                             >
-                                <div className="text-sm text-gray-400 mb-2 flex items-center gap-2">
-                                    <TrendingUp className="w-4 h-4" />
+                                <div className="text-sm text-gray-300 font-semibold mb-2 flex items-center gap-2">
+                                    <TrendingUp className="w-5 h-5 text-crimson-400" />
                                     Next Scheduled
                                 </div>
-                                <div className="text-2xl font-mono text-rose-400 font-bold">14:00</div>
+                                <div className="text-4xl font-black font-mono text-crimson-400 drop-shadow-lg">14:00</div>
                             </motion.div>
                         </div>
                     </motion.div>
@@ -339,11 +342,11 @@ function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.4 }}
-                    className="glass rounded-2xl overflow-hidden border border-white/5 font-mono text-sm"
+                    className="glass rounded-3xl overflow-hidden border-2 border-white/20 font-mono text-sm shadow-2xl"
                 >
-                    <div className="bg-dark-900/50 px-6 py-3 flex items-center gap-3 border-b border-white/5">
-                        <Terminal className="w-5 h-5 text-rose-500" />
-                        <span className="text-gray-400 font-semibold">System Logs</span>
+                    <div className="bg-dark-800/80 px-6 py-4 flex items-center gap-3 border-b border-white/20">
+                        <Terminal className="w-6 h-6 text-crimson-400" />
+                        <span className="text-white font-bold text-base">System Logs</span>
                         <div className="flex-1" />
                         <motion.div
                             className="flex gap-2"
@@ -351,18 +354,18 @@ function App() {
                             animate={{ opacity: 1 }}
                             transition={{ delay: 0.6 }}
                         >
-                            <div className="w-3 h-3 rounded-full bg-rose-500" />
-                            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                            <div className="w-3 h-3 rounded-full bg-green-500" />
+                            <div className="w-3 h-3 rounded-full bg-crimson-500 shadow-lg shadow-crimson-500/50" />
+                            <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-lg shadow-yellow-400/50" />
+                            <div className="w-3 h-3 rounded-full bg-green-400 shadow-lg shadow-green-400/50" />
                         </motion.div>
                     </div>
-                    <div className="p-6 h-80 overflow-y-auto space-y-2 text-gray-300 bg-dark-950/50">
+                    <div className="p-6 h-96 overflow-y-auto space-y-2 bg-dark-900/50">
                         <AnimatePresence initial={false}>
                             {logs.length === 0 && (
                                 <motion.div
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
-                                    className="text-gray-600 italic"
+                                    className="text-gray-500 italic text-base"
                                 >
                                     Waiting for logs...
                                 </motion.div>
@@ -373,9 +376,9 @@ function App() {
                                     initial={{ opacity: 0, x: -20 }}
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ duration: 0.3 }}
-                                    className="break-words hover:bg-white/5 px-2 py-1 rounded transition-colors"
+                                    className="break-words hover:bg-white/5 px-3 py-2 rounded-lg transition-colors text-gray-200"
                                 >
-                                    <span className="text-rose-500 mr-3 font-bold">➜</span>
+                                    <span className="text-crimson-400 mr-3 font-bold text-base">➜</span>
                                     {log}
                                 </motion.div>
                             ))}
