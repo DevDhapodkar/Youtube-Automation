@@ -20,7 +20,17 @@ class AudioGenerator:
         """
         logger.info(f"Generating audio to {output_file}...")
         try:
-            asyncio.run(self._generate_audio_async(text, output_file))
+            # Check if there's already a running event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, create a task
+                import nest_asyncio
+                nest_asyncio.apply()
+                asyncio.run(self._generate_audio_async(text, output_file))
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run
+                asyncio.run(self._generate_audio_async(text, output_file))
+            
             logger.info("Audio generation complete.")
             return output_file
         except Exception as e:
