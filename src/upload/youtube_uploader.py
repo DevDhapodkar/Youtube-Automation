@@ -32,7 +32,13 @@ class YouTubeUploader:
                 
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.client_secrets_file, self.SCOPES)
-                creds = flow.run_local_server(port=0)
+                
+                # Generate and print URL for manual access if browser fails
+                auth_url, _ = flow.authorization_url(prompt='consent')
+                logger.info(f"If the browser does not open, please visit this URL to authorize: {auth_url}")
+                print(f"\n\n=== AUTHENTICATION URL ===\n{auth_url}\n==========================\n")
+                
+                creds = flow.run_local_server(port=8080, prompt='consent')
             
             with open(self.token_file, 'wb') as token:
                 pickle.dump(creds, token)
