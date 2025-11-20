@@ -8,7 +8,7 @@ class ScriptGenerator:
     def __init__(self):
         if Config.GEMINI_API_KEY:
             genai.configure(api_key=Config.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            self.model = genai.GenerativeModel('models/gemini-1.5-flash')
         else:
             logger.error("GEMINI_API_KEY is missing. Script generation will fail.")
             self.model = None

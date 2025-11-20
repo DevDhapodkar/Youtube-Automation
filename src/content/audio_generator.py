@@ -2,6 +2,7 @@ import logging
 import asyncio
 import edge_tts
 from config.settings import Config
+import concurrent.futures
 
 logger = logging.getLogger(__name__)
 
@@ -16,20 +17,14 @@ class AudioGenerator:
 
     def generate_audio(self, text, output_file):
         """
-        Synchronous wrapper for the async generation.
+        Synchronous wrapper for the async generation using a thread.
         """
         logger.info(f"Generating audio to {output_file}...")
         try:
-            # Check if there's already a running event loop
-            try:
-                loop = asyncio.get_running_loop()
-                # If we're in an async context, create a task
-                import nest_asyncio
-                nest_asyncio.apply()
-                asyncio.run(self._generate_audio_async(text, output_file))
-            except RuntimeError:
-                # No event loop running, safe to use asyncio.run
-                asyncio.run(self._generate_audio_async(text, output_file))
+            # Run the async function in a new thread with its own event loop
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._generate_audio_async(text, output_file))
+                future.result()  # Wait for completion
             
             logger.info("Audio generation complete.")
             return output_file

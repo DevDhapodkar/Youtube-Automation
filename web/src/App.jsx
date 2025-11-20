@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import useWebSocket, { ReadyState } from 'react-use-websocket';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Square, Activity, Terminal, Settings, Youtube, CheckCircle, AlertCircle, Sparkles, TrendingUp, Zap, X, Save } from 'lucide-react';
+import { Play, Square, Activity, Terminal, Settings, Youtube, CheckCircle, AlertCircle, Sparkles, TrendingUp, Zap, X, Check } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

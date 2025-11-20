@@ -1,8 +1,8 @@
 import logging
 import os
-from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+import subprocess
+import json
 from config.settings import Config
-import math
 
 logger = logging.getLogger(__name__)
 
@@ -13,90 +13,98 @@ class VideoEditor:
 
     def create_short(self, audio_path, visual_paths, script_text, output_path="final_video.mp4"):
         """
-        Assembles the video.
+        Assembles the video using FFmpeg (memory efficient).
         """
-        logger.info("Starting video assembly...")
+        logger.info("Starting video assembly with FFmpeg...")
         
         try:
-            # 1. Load Audio
-            audio = AudioFileClip(audio_path)
-            duration = audio.duration
+            # 1. Get audio duration using FFprobe
+            duration = self._get_audio_duration(audio_path)
             logger.info(f"Audio duration: {duration}s")
-
-            # 2. Prepare Visuals
-            clips = []
-            current_duration = 0
             
-            # Loop through visuals until we cover the audio duration
-            while current_duration < duration:
-                for v_path in visual_paths:
-                    if current_duration >= duration:
-                        break
-                    
-                    try:
-                        clip = VideoFileClip(v_path)
-                        # Resize to vertical 9:16 (fill)
-                        # Assuming 1080x1920
-                        
-                        # Calculate resize factor to fill height
-                        # clip_h = clip.h
-                        # target_h = 1920
-                        # ratio = target_h / clip_h
-                        # clip = clip.resize(ratio)
-                        
-                        # Simple resize (might distort if aspect ratio is wild, but usually okay for stock)
-                        # Better: crop to center
-                        if clip.w / clip.h > 1080 / 1920:
-                            # Too wide, crop width
-                            clip = clip.resize(height=1920)
-                            clip = clip.crop(x1=clip.w/2 - 540, width=1080)
-                        else:
-                            # Too tall/narrow, crop height
-                            clip = clip.resize(width=1080)
-                            # clip = clip.crop(y1=clip.h/2 - 960, height=1920)
-                        
-                        # Set duration for this clip (e.g., 3-5 seconds or remaining time)
-                        clip_duration = min(clip.duration, 5, duration - current_duration)
-                        clip = clip.subclip(0, clip_duration)
-                        
-                        clips.append(clip)
-                        current_duration += clip_duration
-                    except Exception as e:
-                        logger.error(f"Error processing clip {v_path}: {e}")
-
-            if not clips:
-                logger.error("No valid clips created.")
+            if not visual_paths or len(visual_paths) == 0:
+                logger.error("No visual files provided")
                 return None
 
-            final_visual = concatenate_videoclips(clips, method="compose")
-            final_visual = final_visual.set_audio(audio)
+            # 2. Create a concat file for videos
+            concat_file = os.path.join(Config.ASSETS_DIR, "concat_list.txt")
+            with open(concat_file, 'w') as f:
+                for video_path in visual_paths:
+                    # Repeat each video to fill duration
+                    f.write(f"file '{video_path}'\n")
+            
+            # 3. Concatenate and process videos with FFmpeg
+            temp_video = os.path.join(Config.ASSETS_DIR, "temp_concatenated.mp4")
+            
+            # Concatenate videos, scale to 1080x1920, and trim to audio duration
+            concat_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-i', audio_path,
+                '-t', str(duration),
+                '-vf', f'scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase,crop={self.resolution[0]}:{self.resolution[1]}',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',  # Fast encoding
+                '-crf', '28',  # Lower quality = less memory
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-shortest',
+                '-map', '0:v:0',  # video from concat
+                '-map', '1:a:0',  # audio from audio file
+                temp_video
+            ]
+            
+            logger.info("Running FFmpeg concatenation...")
+            result = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=120)
+            
+            if result.returncode != 0:
+                logger.error(f"FFmpeg concat failed: {result.stderr}")
+                return None
+            
+            # 4. Add simple text overlay (optional - can skip to save memory)
+            # For now, skip text overlay to keep it lightweight
+            # You can add it later with: -vf "drawtext=..." if needed
+            
+            # Move temp video to final output
+            if os.path.exists(temp_video):
+                os.rename(temp_video, output_path)
+                logger.info(f"Video created successfully: {output_path}")
+                
+                # Cleanup
+                if os.path.exists(concat_file):
+                    os.remove(concat_file)
+                
+                return output_path
+            else:
+                logger.error("Temp video not created")
+                return None
 
-            # 3. Add Subtitles (Simple centered text)
-            # Splitting text into chunks
-            words = script_text.split()
-            chunk_size = 5 # words per chunk
-            chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
-            
-            chunk_duration = duration / len(chunks)
-            
-            text_clips = []
-            for i, chunk in enumerate(chunks):
-                txt_clip = TextClip(chunk, fontsize=70, color='white', font='Arial-Bold', 
-                                    stroke_color='black', stroke_width=2, size=(1000, None), method='caption')
-                txt_clip = txt_clip.set_position('center').set_duration(chunk_duration).set_start(i * chunk_duration)
-                text_clips.append(txt_clip)
-
-            final_video = CompositeVideoClip([final_visual] + text_clips)
-            
-            # 4. Write File
-            logger.info(f"Writing video to {output_path}")
-            final_video.write_videofile(output_path, fps=self.fps, codec='libx264', audio_codec='aac')
-            
-            return output_path
-
+        except subprocess.TimeoutExpired:
+            logger.error("FFmpeg processing timed out")
+            return None
         except Exception as e:
             logger.error(f"Video creation failed: {e}", exc_info=True)
             return None
+
+    def _get_audio_duration(self, audio_path):
+        """Get audio duration using FFprobe"""
+        try:
+            cmd = [
+                'ffprobe',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'json',
+                audio_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            data = json.loads(result.stdout)
+            duration = float(data['format']['duration'])
+            return duration
+        except Exception as e:
+            logger.error(f"Failed to get audio duration: {e}")
+            return 60  # Default to 60 seconds
 
 if __name__ == "__main__":
     # Mock test

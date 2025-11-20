@@ -137,9 +137,10 @@ async def run_automation_cycle():
         query = " ".join(topic.split()[:2])
         visual_paths = visual_gen.get_stock_videos(query)
         
-        # 3. Production
+        # 3. Production - Using FFmpeg (memory efficient)
         state.current_action = "Editing Video..."
         await manager.broadcast({"type": "status", "data": state.current_action})
+        
         video_editor = VideoEditor()
         video_path = os.path.join(Config.ASSETS_DIR, "final_video.mp4")
         final_video = video_editor.create_short(audio_path, visual_paths, script, video_path)
