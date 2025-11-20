@@ -1,6 +1,6 @@
 import logging
 import os
-from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+from moviepy import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
 from config.settings import Config
 import math
 

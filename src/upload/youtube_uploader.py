@@ -36,7 +36,7 @@ class YouTubeUploader:
                 # Generate and print URL for manual access if browser fails
                 auth_url, _ = flow.authorization_url(prompt='consent')
                 logger.info(f"If the browser does not open, please visit this URL to authorize: {auth_url}")
-                print(f"\n\n=== AUTHENTICATION URL ===\n{auth_url}\n==========================\n")
+                logger.info(f"AUTH URL: {auth_url}")
                 
                 # Write URL to file for debugging
                 with open(os.path.join(Config.BASE_DIR, '..', 'auth_url.txt'), 'w') as f:
