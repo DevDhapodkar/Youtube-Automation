@@ -10,3 +10,5 @@ python-dotenv
 apscheduler
 pytrends
 proglog
+fastapi
+uvicorn

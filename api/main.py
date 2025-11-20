@@ -14,12 +14,27 @@ from src.content.thumbnail_generator import ThumbnailGenerator
 from src.video.video_editor import VideoEditor
 from src.upload.youtube_uploader import YouTubeUploader
 
-# Configure logging to capture in memory for WebSocket streaming
-log_capture_string = io.StringIO()
-ch = logging.StreamHandler(log_capture_string)
-ch.setLevel(logging.INFO)
+import queue
+
+# Global log queue
+log_queue = queue.Queue()
+
+class WebSocketHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            log_queue.put(msg)
+        except Exception:
+            self.handleError(record)
+
+# Configure root logger to capture everything
+logging.basicConfig(level=logging.INFO)
+root_logger = logging.getLogger()
+ws_handler = WebSocketHandler()
+ws_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+root_logger.addHandler(ws_handler)
+
 logger = logging.getLogger(__name__)
-logger.addHandler(ch)
 
 app = FastAPI()
 
@@ -70,6 +85,21 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # Background Task
+async def log_broadcaster():
+    while True:
+        try:
+            while not log_queue.empty():
+                log = log_queue.get_nowait()
+                await manager.broadcast({"type": "log", "data": log})
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            print(f"Log broadcast error: {e}")
+            await asyncio.sleep(1)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(log_broadcaster())
+
 async def run_automation_cycle():
     state.is_running = True
     state.current_action = "Starting Cycle..."

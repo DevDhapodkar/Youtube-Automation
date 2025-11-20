@@ -38,6 +38,10 @@ class YouTubeUploader:
                 logger.info(f"If the browser does not open, please visit this URL to authorize: {auth_url}")
                 print(f"\n\n=== AUTHENTICATION URL ===\n{auth_url}\n==========================\n")
                 
+                # Write URL to file for debugging
+                with open(os.path.join(Config.BASE_DIR, '..', 'auth_url.txt'), 'w') as f:
+                    f.write(auth_url)
+                
                 creds = flow.run_local_server(port=8080, prompt='consent')
             
             with open(self.token_file, 'wb') as token:

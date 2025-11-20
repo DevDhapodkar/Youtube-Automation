@@ -2,13 +2,15 @@
 
 # Start Backend
 echo "Starting Backend..."
-cd api
-uvicorn main:app --reload --port 8000 &
+# Start Backend
+echo "Starting Backend..."
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+./venv/bin/python -m uvicorn api.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
 # Start Frontend
 echo "Starting Frontend..."
-cd ../web
+cd web
 npm run dev &
 FRONTEND_PID=$!
 
