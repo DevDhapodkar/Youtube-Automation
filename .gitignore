@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Dependencies
+node_modules/
+dist/
+build/
+
+# Secrets (CRITICAL)
+client_secrets.json
+token.pickle
+*.json
+!package.json
+!tsconfig.json
+!vite.config.js
+!tailwind.config.js
+
+# Logs
+*.log
+assets/
