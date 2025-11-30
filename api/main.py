@@ -160,10 +160,10 @@ async def run_automation_cycle():
              tags = ["shorts", "ai", "facts", topic.split()[0]]
              
              # UNCOMMENT TO ENABLE REAL UPLOAD
-             # video_id = uploader.upload_video(final_video, topic, description, tags)
-             # await manager.broadcast({"type": "log", "data": f"Uploaded! ID: {video_id}"})
+             video_id = uploader.upload_video(final_video, topic, description, tags)
+             await manager.broadcast({"type": "log", "data": f"Uploaded! ID: {video_id}"})
              
-             await manager.broadcast({"type": "log", "data": "Upload simulated (Safety Mode). Uncomment in api/main.py to enable."})
+             # await manager.broadcast({"type": "log", "data": "Upload simulated (Safety Mode). Uncomment in api/main.py to enable."})
         
         state.current_action = "Cycle Complete"
         await manager.broadcast({"type": "status", "data": state.current_action})
