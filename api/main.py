@@ -156,7 +156,18 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
         await manager.broadcast({"type": "status", "data": state.current_action})
         audio_gen = AudioGenerator()
         audio_path = os.path.join(Config.ASSETS_DIR, "temp_audio.mp3")
-        audio_gen.generate_audio(script, audio_path)
+        audio_gen.generate_audio(script, audio_path, target_duration=60)
+        
+        # Add ambient sound effects
+        state.current_action = "Adding Sound Effects..."
+        await manager.broadcast({"type": "status", "data": state.current_action})
+        from src.audio.sound_effects import SoundEffectGenerator
+        sfx_gen = SoundEffectGenerator()
+        ambient_sound = sfx_gen.get_ambient_sound(niche.value)
+        
+        if ambient_sound:
+            mixed_audio_path = os.path.join(Config.ASSETS_DIR, "audio_with_sfx.mp3")
+            audio_path = sfx_gen.mix_audio(audio_path, ambient_sound, mixed_audio_path, ambient_volume=0.2)
         
         state.current_action = "Gathering Visuals..."
         await manager.broadcast({"type": "status", "data": state.current_action})
@@ -180,13 +191,22 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
             
         visual_paths = visual_gen.get_stock_videos(queries, count=4)
         
+        # If we don't have enough visuals, generate AI images
+        if len(visual_paths) < 2:
+            logger.info("Insufficient stock footage, generating AI images...")
+            from src.content.image_generator import ImageGenerator
+            img_gen = ImageGenerator()
+            ai_images = img_gen.create_images_for_script(script, niche.value, count=3)
+            visual_paths.extend(ai_images)
+            await manager.broadcast({"type": "log", "data": f"Generated {len(ai_images)} AI images"})
+        
         # 3. Production - Using FFmpeg (memory efficient)
         state.current_action = "Editing Video..."
         await manager.broadcast({"type": "status", "data": state.current_action})
         
         video_editor = VideoEditor()
         video_path = os.path.join(Config.ASSETS_DIR, "final_video.mp4")
-        final_video = video_editor.create_short(audio_path, visual_paths, script, video_path)
+        final_video = video_editor.create_short(audio_path, visual_paths, script, video_path, niche=niche.value)
         
         # 4. Upload
         state.current_action = "Uploading..."

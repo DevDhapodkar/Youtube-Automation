@@ -11,7 +11,20 @@ class VideoEditor:
         self.resolution = Config.VIDEO_RESOLUTION # (1080, 1920)
         self.fps = Config.FPS
 
-    def create_short(self, audio_path, visual_paths, script_text, output_path="final_video.mp4"):
+    def _get_color_filter(self, niche):
+        """Get FFmpeg color grading filter for niche"""
+        filters = {
+            "horror": "eq=contrast=1.3:saturation=0.6,vignette=angle=PI/4",
+            "horror_stories": "eq=contrast=1.4:saturation=0.5:brightness=-0.1,vignette=angle=PI/3",
+            "history": "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,noise=alls=10:allf=t",
+            "scp": "eq=contrast=1.5:saturation=0.7,colorbalance=rs=-0.2:gs=0:bs=0.3",
+            "life_advice": "eq=contrast=1.1:saturation=1.2:brightness=0.05",
+            "news": "eq=contrast=1.2:saturation=1.1",
+            "general": "eq=contrast=1.1:saturation=1.0"
+        }
+        return filters.get(niche, filters["general"])
+
+    def create_short(self, audio_path, visual_paths, script_text, output_path="final_video.mp4", niche="general"):
         """
         Assembles the video using FFmpeg (memory efficient).
         """
@@ -28,8 +41,39 @@ class VideoEditor:
 
             # 2. Create a concat file for videos
             concat_file = os.path.join(Config.ASSETS_DIR, "concat_list.txt")
+            
+            # Process visual files - apply Ken Burns to images, keep videos as-is
+            processed_visuals = []
+            for idx, visual_path in enumerate(visual_paths):
+                # Check if it's an image or video
+                ext = os.path.splitext(visual_path)[1].lower()
+                if ext in ['.jpg', '.jpeg', '.png']:
+                    # Apply Ken Burns effect to image
+                    logger.info(f"Applying Ken Burns effect to image {idx}")
+                    ken_burns_video = os.path.join(Config.ASSETS_DIR, f"kb_{idx}.mp4")
+                    
+                    # Create 5-second video from image with zoom/pan
+                    kb_cmd = [
+                        'ffmpeg', '-y',
+                        '-loop', '1',
+                        '-i', visual_path,
+                        '-vf', f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0015,1.5)':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920",
+                        '-t', '5',
+                        '-c:v', 'libx264',
+                        '-pix_fmt', 'yuv420p',
+                        ken_burns_video
+                    ]
+                    subprocess.run(kb_cmd, capture_output=True, timeout=30)
+                    
+                    if os.path.exists(ken_burns_video):
+                        processed_visuals.append(ken_burns_video)
+                else:
+                    # It's already a video
+                    processed_visuals.append(visual_path)
+            
+            # Create concat list with processed visuals
             with open(concat_file, 'w') as f:
-                for video_path in visual_paths:
+                for video_path in processed_visuals:
                     # Repeat each video to fill duration
                     f.write(f"file '{video_path}'\n")
             
@@ -49,7 +93,12 @@ class VideoEditor:
             
             subtitles_filter = f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=50'"
 
-            # Concatenate videos, scale to 1080x1920, trim, and add subtitles
+            # Get color grading filter for niche
+            color_filter = self._get_color_filter(niche)
+
+            # Concatenate videos, scale, apply color grading, crop, and add subtitles
+            filter_chain = f"[0:v]scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={self.resolution[0]}:{self.resolution[1]}[vcropped];[vcropped]{subtitles_filter}[vfinal]"
+            
             concat_cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
@@ -57,7 +106,7 @@ class VideoEditor:
                 '-i', concat_file,
                 '-i', audio_path,
                 '-t', str(duration),
-                '-filter_complex', f"[0:v]scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase,crop={self.resolution[0]}:{self.resolution[1]}[vscaled];[vscaled]{subtitles_filter}[vfinal]",
+                '-filter_complex', filter_chain,
                 '-map', '[vfinal]',
                 '-map', '1:a:0',
                 '-c:v', 'libx264',
