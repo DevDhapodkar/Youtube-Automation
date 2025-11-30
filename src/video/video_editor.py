@@ -77,17 +77,36 @@ class VideoEditor:
                 return None
             
             # Create concat list - repeat videos to fill 60 seconds
-            # Each video plays for ~5-10 seconds, so we need multiple loops
+            # We need to ensure total video length >= audio duration
             concat_file = os.path.join(Config.ASSETS_DIR, "concat_list.txt")
+            
+            # Get duration of each processed visual
+            visual_durations = []
+            for visual in processed_visuals:
+                try:
+                    probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', visual]
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+                    dur = float(result.stdout.strip())
+                    visual_durations.append(dur)
+                except:
+                    visual_durations.append(5.0)  # Default 5 seconds if probe fails
+            
+            total_visual_duration = sum(visual_durations)
+            
+            # Calculate how many full loops we need
+            if total_visual_duration > 0:
+                loops_needed = int(duration / total_visual_duration) + 2  # +2 for safety margin
+            else:
+                loops_needed = 5
+            
+            logger.info(f"Total visual duration: {total_visual_duration}s, loops needed: {loops_needed}")
+            
             with open(concat_file, 'w') as f:
-                # Calculate total loops needed (60s / number of clips)
-                loops_needed = max(3, int(duration / len(processed_visuals)) + 1)
-                
                 for _ in range(loops_needed):
                     for video_path in processed_visuals:
                         f.write(f"file '{video_path}'\n")
             
-            # 3. Generate Subtitles (SRT) with proper timing
+            # 3. Generate Subtitles (SRT) with proper timing based on audio duration
             srt_path = os.path.join(Config.ASSETS_DIR, "subtitles.srt")
             self._generate_srt(script_text, duration, srt_path)
             
@@ -97,11 +116,12 @@ class VideoEditor:
             # Get color grading filter for niche
             color_filter = self._get_color_filter(niche)
 
-            # Build filter chain: scale → color grade → crop → subtitles
+            # Build filter chain: scale → color grade → crop
             # Use setpts to ensure smooth playback without black frames
             filter_chain = f"[0:v]setpts=PTS-STARTPTS,scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={self.resolution[0]}:{self.resolution[1]}[vcropped]"
             
             # First pass: concatenate and apply filters WITHOUT subtitles
+            # CRITICAL: Remove -shortest flag and use -t to force exact duration
             concat_cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
@@ -111,13 +131,12 @@ class VideoEditor:
                 '-filter_complex', filter_chain,
                 '-map', '[vcropped]',
                 '-map', '1:a:0',
-                '-t', str(duration),
+                '-t', str(duration),  # Force exact duration
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '23',
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-shortest',
                 temp_video
             ]
             
@@ -176,41 +195,54 @@ class VideoEditor:
 
     def _generate_srt(self, text, duration, output_path):
         """
-        Generates a simple SRT file by distributing text evenly across duration.
+        Generate SRT subtitle file with improved timing.
+        Shows 2-3 words at a time for better sync with audio.
         """
         words = text.split()
-        word_count = len(words)
-        if word_count == 0:
-            return
-
-        # Group words into chunks (e.g., 3-4 words per chunk for readability)
-        chunk_size = 4
-        chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, word_count, chunk_size)]
+        total_words = len(words)
         
-        chunk_duration = duration / len(chunks)
+        # Calculate words per second
+        words_per_second = total_words / duration
         
-        with open(output_path, 'w') as f:
-            for i, chunk in enumerate(chunks):
-                start_time = i * chunk_duration
-                end_time = (i + 1) * chunk_duration
-                
-                # Format time as HH:MM:SS,mmm
-                start_fmt = self._format_time(start_time)
-                end_fmt = self._format_time(end_time)
-                
-                f.write(f"{i+1}\n")
-                f.write(f"{start_fmt} --> {end_fmt}\n")
-                f.write(f"{chunk}\n\n")
-
-    def _format_time(self, seconds):
-        """Convert seconds to HH:MM:SS,mmm format"""
-        millis = int((seconds - int(seconds)) * 1000)
-        seconds = int(seconds)
-        minutes = seconds // 60
-        hours = minutes // 60
-        minutes %= 60
-        seconds %= 60
-        return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
+        # Show 2-3 words at a time (average 2.5)
+        words_per_chunk = 3 if words_per_second > 3 else 2
+        
+        # Calculate time per chunk
+        chunks = []
+        for i in range(0, total_words, words_per_chunk):
+            chunk_words = words[i:i + words_per_chunk]
+            chunks.append(' '.join(chunk_words))
+        
+        num_chunks = len(chunks)
+        time_per_chunk = duration / num_chunks
+        
+        # Generate SRT content
+        srt_content = []
+        for i, chunk in enumerate(chunks):
+            start_time = i * time_per_chunk
+            end_time = (i + 1) * time_per_chunk
+            
+            # Format times as HH:MM:SS,mmm
+            start_str = self._format_srt_time(start_time)
+            end_str = self._format_srt_time(end_time)
+            
+            srt_content.append(f"{i + 1}")
+            srt_content.append(f"{start_str} --> {end_str}")
+            srt_content.append(chunk)
+            srt_content.append("")  # Empty line between entries
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(srt_content))
+        
+        logger.info(f"Generated SRT with {num_chunks} subtitle chunks ({words_per_chunk} words each)")
+    
+    def _format_srt_time(self, seconds):
+        """Format seconds as SRT timestamp: HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
     def _get_audio_duration(self, audio_path):
         """Get audio duration using FFprobe"""

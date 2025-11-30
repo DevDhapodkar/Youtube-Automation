@@ -189,7 +189,7 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
         else:
             queries.extend(["cinematic", "technology", "abstract background"])
             
-        visual_paths = visual_gen.get_stock_videos(queries, count=4)
+        visual_paths = visual_gen.get_stock_videos(queries, count=8)
         
         # If we don't have enough visuals, generate AI images
         if len(visual_paths) < 2:
