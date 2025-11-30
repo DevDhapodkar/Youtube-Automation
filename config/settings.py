@@ -19,6 +19,7 @@ class Config:
     
     # Scheduler
     UPLOAD_FREQUENCY_HOURS = int(os.getenv("UPLOAD_FREQUENCY_HOURS", 24))
+    UPLOAD_SCHEDULE = [] # List of "HH:MM" strings, e.g. ["10:00", "18:00"]
 
     @staticmethod
     def validate():

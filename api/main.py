@@ -5,9 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
 import os
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from config.settings import Config
 from src.trends.trend_analyzer import TrendAnalyzer
-from src.content.script_generator import ScriptGenerator
+from src.content.script_generator import ScriptGenerator, Niche
 from src.content.audio_generator import AudioGenerator
 from src.content.visual_generator import VisualGenerator
 from src.content.thumbnail_generator import ThumbnailGenerator
@@ -53,15 +55,20 @@ class AgentState:
     current_action = "Idle"
     last_log = ""
     is_authenticated = os.path.exists(os.path.join(Config.BASE_DIR, '..', 'token.pickle'))
+    selected_niche = Niche.GENERAL
+    schedule = [] # ["10:00", "18:00"]
 
 state = AgentState()
 clients = []
+scheduler = AsyncIOScheduler()
 
 # Models
 class ConfigUpdate(BaseModel):
     gemini_key: str | None = None
     pexels_key: str | None = None
     upload_freq: int | None = None
+    niche: str | None = None
+    schedule: list[str] | None = None
 
 # WebSocket Manager
 class ConnectionManager:
@@ -99,19 +106,39 @@ async def log_broadcaster():
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(log_broadcaster())
+    scheduler.start()
+    logger.info("Scheduler started.")
 
-async def run_automation_cycle():
+async def run_automation_cycle(niche: Niche = Niche.GENERAL):
+    if state.is_running:
+        logger.warning("Agent already running, skipping cycle.")
+        return
+
     state.is_running = True
-    state.current_action = "Starting Cycle..."
+    state.current_action = f"Starting Cycle ({niche.value})..."
     await manager.broadcast({"type": "status", "data": state.current_action})
     
     try:
-        # 1. Trends
-        state.current_action = "Analyzing Trends..."
+        # 1. Topic Selection based on Niche
+        state.current_action = "Selecting Topic..."
         await manager.broadcast({"type": "status", "data": state.current_action})
         
-        trend_analyzer = TrendAnalyzer()
-        topic = trend_analyzer.select_topic()
+        # Use AI to generate topics dynamically
+        from src.content.topic_generator import TopicGenerator
+        topic_gen = TopicGenerator()
+        
+        if niche == Niche.NEWS:
+            # For news, use trending topics
+            trend_analyzer = TrendAnalyzer()
+            topic = f"Breaking: {trend_analyzer.select_topic()}"
+        elif niche == Niche.GENERAL or niche == Niche.TRENDING:
+            # For general, use trending topics
+            trend_analyzer = TrendAnalyzer()
+            topic = trend_analyzer.select_topic()
+        else:
+            # For all other niches, generate AI topics
+            topic = topic_gen.generate_topic(niche.value)
+            
         await manager.broadcast({"type": "log", "data": f"Selected Topic: {topic}"})
         
         if not topic:
@@ -122,7 +149,7 @@ async def run_automation_cycle():
         await manager.broadcast({"type": "status", "data": state.current_action})
         
         script_gen = ScriptGenerator()
-        script = script_gen.generate_script(topic)
+        script = script_gen.generate_script(topic, niche=niche)
         await manager.broadcast({"type": "log", "data": "Script generated."})
         
         state.current_action = "Generating Audio..."
@@ -134,8 +161,24 @@ async def run_automation_cycle():
         state.current_action = "Gathering Visuals..."
         await manager.broadcast({"type": "status", "data": state.current_action})
         visual_gen = VisualGenerator()
-        query = " ".join(topic.split()[:2])
-        visual_paths = visual_gen.get_stock_videos(query)
+        
+        # Generate multiple queries for better variety
+        base_query = " ".join(topic.split()[:2])
+        queries = [base_query]
+        if niche == Niche.HORROR:
+            queries.extend(["scary dark", "creepy forest", "nightmare"])
+        elif niche == Niche.HORROR_STORIES:
+            queries.extend(["dark hallway", "abandoned building night", "eerie shadows", "fog mysterious"])
+        elif niche == Niche.HISTORY:
+            queries.extend(["ancient ruins", "historical vintage", "museum"])
+        elif niche == Niche.SCP:
+            queries.extend(["laboratory dark", "military secret", "monster"])
+        elif niche == Niche.LIFE_ADVICE:
+            queries.extend(["meditation", "success business", "calm nature"])
+        else:
+            queries.extend(["cinematic", "technology", "abstract background"])
+            
+        visual_paths = visual_gen.get_stock_videos(queries, count=4)
         
         # 3. Production - Using FFmpeg (memory efficient)
         state.current_action = "Editing Video..."
@@ -156,8 +199,8 @@ async def run_automation_cycle():
              raise Exception("Not Authenticated")
 
         if final_video:
-             description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts"
-             tags = ["shorts", "ai", "facts", topic.split()[0]]
+             description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts #{niche.value}"
+             tags = ["shorts", "ai", "facts", niche.value, topic.split()[0]]
              
              # UNCOMMENT TO ENABLE REAL UPLOAD
              video_id = uploader.upload_video(final_video, topic, description, tags)
@@ -185,14 +228,39 @@ def get_status():
     return {
         "is_running": state.is_running, 
         "current_action": state.current_action,
-        "is_authenticated": os.path.exists(os.path.join(Config.BASE_DIR, '..', 'token.pickle'))
+        "is_authenticated": os.path.exists(os.path.join(Config.BASE_DIR, '..', 'token.pickle')),
+        "niche": state.selected_niche,
+        "schedule": state.schedule
     }
+
+@app.post("/update_config")
+async def update_config(config: ConfigUpdate):
+    if config.niche:
+        try:
+            state.selected_niche = Niche(config.niche)
+            logger.info(f"Niche updated to: {state.selected_niche}")
+        except ValueError:
+            pass
+            
+    if config.schedule is not None:
+        state.schedule = config.schedule
+        # Update scheduler
+        scheduler.remove_all_jobs()
+        for time_str in state.schedule:
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                scheduler.add_job(run_automation_cycle, CronTrigger(hour=hour, minute=minute), args=[state.selected_niche])
+                logger.info(f"Scheduled job for {time_str}")
+            except Exception as e:
+                logger.error(f"Invalid time format {time_str}: {e}")
+        
+    return {"message": "Config updated", "niche": state.selected_niche, "schedule": state.schedule}
 
 @app.post("/start")
 async def start_agent():
     if state.is_running:
         return {"message": "Already running"}
-    asyncio.create_task(run_automation_cycle())
+    asyncio.create_task(run_automation_cycle(state.selected_niche))
     return {"message": "Started"}
 
 @app.post("/stop")

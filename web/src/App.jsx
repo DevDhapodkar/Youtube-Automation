@@ -17,7 +17,20 @@ function App() {
     const [isRunning, setIsRunning] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [selectedNiche, setSelectedNiche] = useState('general');
+    const [schedule, setSchedule] = useState([]);
+    const [newTime, setNewTime] = useState('');
     const logsEndRef = useRef(null);
+
+    const niches = [
+        { value: 'general', label: '🎬 General/Trending', desc: 'Viral curiosity content' },
+        { value: 'horror', label: '👻 Horror Facts', desc: 'Scary facts & legends' },
+        { value: 'horror_stories', label: '📖 Horror Stories', desc: 'Narrative suspense tales' },
+        { value: 'history', label: '📜 History Facts', desc: 'Educational & dramatic' },
+        { value: 'scp', label: '🔬 SCP Foundation', desc: 'Classified anomalies' },
+        { value: 'life_advice', label: '💡 Life Advice', desc: 'Psychology & tips' },
+        { value: 'news', label: '📰 News/Tech', desc: 'Breaking updates' },
+    ];
 
     const { sendMessage, lastMessage, readyState } = useWebSocket(WS_URL, {
         onOpen: () => console.log('Connected to Agent'),
@@ -32,6 +45,8 @@ function App() {
                 setIsRunning(data.is_running);
                 setStatus(data.current_action);
                 setIsAuthenticated(data.is_authenticated);
+                setSelectedNiche(data.niche || 'general');
+                setSchedule(data.schedule || []);
             });
     }, []);
 
@@ -86,6 +101,32 @@ function App() {
         } catch (e) {
             console.error(e);
         }
+    };
+
+    const updateConfig = async () => {
+        try {
+            const res = await fetch('http://localhost:8000/update_config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ niche: selectedNiche, schedule })
+            });
+            const data = await res.json();
+            setLogs(prev => [...prev, `Config updated: ${data.message}`]);
+            setShowSettings(false);
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const addScheduleTime = () => {
+        if (newTime && !schedule.includes(newTime)) {
+            setSchedule([...schedule, newTime]);
+            setNewTime('');
+        }
+    };
+
+    const removeScheduleTime = (time) => {
+        setSchedule(schedule.filter(t => t !== time));
     };
 
     return (
@@ -424,39 +465,102 @@ function App() {
                             </div>
 
                             <div className="space-y-6">
+                                {/* Niche Selection */}
+                                <div className="p-6 glass rounded-2xl border border-white/20">
+                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                        🎯 Video Type (Niche)
+                                    </h3>
+                                    <select
+                                        value={selectedNiche}
+                                        onChange={(e) => setSelectedNiche(e.target.value)}
+                                        className="w-full p-4 bg-dark-800 border-2 border-white/20 rounded-xl text-white font-semibold focus:border-crimson-500 focus:outline-none transition-all"
+                                    >
+                                        {niches.map(niche => (
+                                            <option key={niche.value} value={niche.value}>
+                                                {niche.label} - {niche.desc}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-gray-400 text-sm mt-3">
+                                        Choose the type of content to generate. Each niche has tailored scripts and visuals.
+                                    </p>
+                                </div>
+
+                                {/* Schedule Configuration */}
+                                <div className="p-6 glass rounded-2xl border border-white/20">
+                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                        ⏰ Upload Schedule
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className="flex gap-3">
+                                            <input
+                                                type="time"
+                                                value={newTime}
+                                                onChange={(e) => setNewTime(e.target.value)}
+                                                className="flex-1 p-4 bg-dark-800 border-2 border-white/20 rounded-xl text-white font-mono focus:border-crimson-500 focus:outline-none transition-all"
+                                            />
+                                            <motion.button
+                                                onClick={addScheduleTime}
+                                                className="px-6 py-4 bg-gradient-red hover:shadow-glow-red rounded-xl text-white font-bold transition-all"
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                            >
+                                                Add
+                                            </motion.button>
+                                        </div>
+
+                                        {schedule.length > 0 && (
+                                            <div className="space-y-2">
+                                                <p className="text-sm text-gray-400 font-semibold">Scheduled Times:</p>
+                                                {schedule.map((time, i) => (
+                                                    <motion.div
+                                                        key={i}
+                                                        initial={{ opacity: 0, x: -20 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        className="flex items-center justify-between p-3 bg-dark-800 rounded-lg border border-white/10"
+                                                    >
+                                                        <span className="font-mono text-crimson-400 font-bold text-lg">{time}</span>
+                                                        <motion.button
+                                                            onClick={() => removeScheduleTime(time)}
+                                                            className="p-2 glass-red rounded-lg hover:bg-crimson-500/30 transition-all"
+                                                            whileHover={{ scale: 1.1 }}
+                                                            whileTap={{ scale: 0.9 }}
+                                                        >
+                                                            <X className="w-4 h-4 text-white" />
+                                                        </motion.button>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <p className="text-gray-400 text-sm">
+                                            {schedule.length === 0
+                                                ? "No scheduled times. Videos will only run when you click Start."
+                                                : `Agent will automatically run ${schedule.length} time(s) per day.`}
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <div className="p-6 glass-red rounded-2xl border border-crimson-500/30">
-                                    <h3 className="text-xl font-bold text-white mb-4">API Configuration</h3>
+                                    <h3 className="text-xl font-bold text-white mb-4">⚙️ API Configuration</h3>
                                     <p className="text-gray-300 text-sm mb-4">
                                         Configure your API keys in the <code className="bg-dark-700 px-2 py-1 rounded text-crimson-400">.env</code> file:
                                     </p>
                                     <div className="space-y-3 text-sm font-mono bg-dark-900/50 p-4 rounded-xl border border-white/10">
                                         <div className="text-gray-400">GEMINI_API_KEY=your_key_here</div>
                                         <div className="text-gray-400">PEXELS_API_KEY=your_key_here</div>
+                                        <div className="text-gray-400">YOUTUBE_API_KEY=your_key_here</div>
                                     </div>
                                 </div>
 
-                                <div className="p-6 glass rounded-2xl border border-white/20">
-                                    <h3 className="text-xl font-bold text-white mb-4">Upload Schedule</h3>
-                                    <p className="text-gray-300 text-sm mb-4">
-                                        Automation runs every 6 hours by default. Modify in <code className="bg-dark-700 px-2 py-1 rounded text-crimson-400">config/settings.py</code>
-                                    </p>
-                                </div>
-
-                                <div className="p-6 glass rounded-2xl border border-white/20">
-                                    <h3 className="text-xl font-bold text-white mb-4">Safety Mode</h3>
-                                    <p className="text-gray-300 text-sm mb-4">
-                                        Real uploads are currently disabled. To enable, uncomment the upload code in <code className="bg-dark-700 px-2 py-1 rounded text-crimson-400">api/main.py</code>
-                                    </p>
-                                </div>
-
                                 <motion.button
-                                    onClick={() => setShowSettings(false)}
+                                    onClick={updateConfig}
                                     className="w-full py-4 bg-gradient-red hover:shadow-glow-red rounded-xl text-lg font-black transition-all duration-300 text-white flex items-center justify-center gap-2"
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                 >
-                                    <Save className="w-5 h-5" />
-                                    Close
+                                    <Check className="w-5 h-5" />
+                                    Save Configuration
                                 </motion.button>
                             </div>
                         </motion.div>
