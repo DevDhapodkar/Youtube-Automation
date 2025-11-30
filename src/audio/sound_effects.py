@@ -7,12 +7,11 @@ logger = logging.getLogger(__name__)
 
 class SoundEffectGenerator:
     """
-    Manages ambient sound effects for videos.
-    Uses Pixabay API for royalty-free sounds.
+    Manages ambient sound effects for videos using Freesound API.
     """
     def __init__(self):
-        self.api_key = os.getenv("PIXABAY_API_KEY", "")
-        self.base_url = "https://pixabay.com/api/"
+        self.api_key = os.getenv("FREESOUND_API_KEY", "")
+        self.base_url = "https://freesound.org/apiv2/search/text/"
         self.sfx_dir = os.path.join(Config.ASSETS_DIR, "sfx")
         
         if not os.path.exists(self.sfx_dir):
@@ -20,18 +19,18 @@ class SoundEffectGenerator:
     
     def get_ambient_sound(self, niche):
         """
-        Get appropriate ambient sound for the niche.
+        Get appropriate ambient sound for the niche from Freesound.
         Returns path to downloaded audio file, or None if unavailable.
         """
         # Niche-specific search queries
         queries = {
-            "horror": "horror ambient scary",
-            "horror_stories": "suspense thriller dark",
-            "history": "medieval ambient ancient",
-            "scp": "laboratory alarm industrial",
-            "life_advice": "calm meditation peaceful",
-            "news": "news broadcast",
-            "general": "ambient background"
+            "horror": "horror ambient dark drone",
+            "horror_stories": "suspense thriller creepy atmosphere",
+            "history": "medieval ambient ancient music",
+            "scp": "laboratory alarm industrial ambience",
+            "life_advice": "calm meditation peaceful ambient",
+            "news": "news broadcast background",
+            "general": "cinematic ambient background"
         }
         
         query = queries.get(niche, queries["general"])
@@ -42,33 +41,45 @@ class SoundEffectGenerator:
             logger.info(f"Using cached ambient sound for {niche}")
             return cached_file
         
-        # If no API key, use silence (no SFX)
+        # If no API key, skip sound effects
         if not self.api_key:
-            logger.warning("PIXABAY_API_KEY not set. Skipping sound effects.")
+            logger.warning("FREESOUND_API_KEY not set. Skipping sound effects.")
+            logger.info("Get free API key at: https://freesound.org/apiv2/apply/")
             return None
         
         try:
             # Search for sound effects
             params = {
-                "key": self.api_key,
-                "q": query,
-                "audio_type": "music",
-                "per_page": 3
+                "query": query,
+                "filter": "duration:[20 TO 120] type:mp3",  # 20-120 second MP3 files
+                "sort": "downloads_desc",  # Most downloaded first
+                "fields": "id,name,previews",
+                "token": self.api_key
             }
             
+            logger.info(f"Searching Freesound for: {query}")
             response = requests.get(self.base_url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
             
-            if data.get("hits"):
+            if data.get("results"):
                 # Get first result
-                sound = data["hits"][0]
-                download_url = sound.get("previewURL")
+                sound = data["results"][0]
+                preview_url = sound.get("previews", {}).get("preview-hq-mp3")
                 
-                if download_url:
-                    logger.info(f"Downloading ambient sound for {niche}...")
-                    audio_response = requests.get(download_url, timeout=30)
+                if not preview_url:
+                    preview_url = sound.get("previews", {}).get("preview-lq-mp3")
+                
+                if preview_url:
+                    logger.info(f"Downloading ambient sound: {sound.get('name')}")
+                    audio_response = requests.get(preview_url, timeout=30)
                     audio_response.raise_for_status()
+                    
+                    # Validate it's actually audio
+                    content_type = audio_response.headers.get('content-type', '')
+                    if 'audio' not in content_type and 'mpeg' not in content_type:
+                        logger.warning(f"Downloaded file is not audio (type: {content_type}), skipping")
+                        return None
                     
                     with open(cached_file, 'wb') as f:
                         f.write(audio_response.content)
@@ -103,7 +114,8 @@ class SoundEffectGenerator:
                 '-i', voice_path,
                 '-stream_loop', '-1',  # Loop ambient indefinitely
                 '-i', ambient_path,
-                '-filter_complex', f'[1:a]volume={ambient_volume}[ambient];[0:a][ambient]amix=inputs=2:duration=first:dropout_transition=2',
+                '-filter_complex', f'[1:a]volume={ambient_volume}[ambient];[0:a][ambient]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+                '-map', '[aout]',
                 '-c:a', 'libmp3lame',
                 '-q:a', '2',
                 output_path

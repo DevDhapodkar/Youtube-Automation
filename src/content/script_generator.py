@@ -38,8 +38,9 @@ class ScriptGenerator:
         # Base instructions for Shorts
         base_short = """
         Write a highly engaging, viral YouTube Short script.
-        The script must be exactly 130-150 words long (perfect for 60 seconds).
+        The script must be exactly 180-200 words long (perfect for 60 seconds).
         Output ONLY the spoken text. Do not include scene directions or timestamps.
+        Make it COMPLETE - with a clear beginning, middle, and satisfying ending.
         """
         
         # Niche-specific prompts

@@ -39,32 +39,41 @@ class AudioGenerator:
             
             logger.info(f"Generated audio duration: {duration}s (target: {target_duration}s)")
             
-            # If audio is shorter than target, loop it
-            if duration < target_duration:
-                logger.info(f"Extending audio from {duration}s to {target_duration}s")
-                temp_output = output_file.replace('.mp3', '_extended.mp3')
+            # Always ensure audio is exactly target duration
+            if abs(duration - target_duration) > 0.5:  # If difference > 0.5s
+                logger.info(f"Adjusting audio from {duration}s to {target_duration}s")
+                temp_output = output_file.replace('.mp3', '_adjusted.mp3')
                 
-                # Calculate how many loops needed
-                loops = int(target_duration / duration) + 1
+                if duration < target_duration:
+                    # Audio too short - loop it
+                    loops = int(target_duration / duration) + 1
+                    
+                    # Create concat file
+                    concat_file = output_file.replace('.mp3', '_concat.txt')
+                    with open(concat_file, 'w') as f:
+                        for _ in range(loops):
+                            f.write(f"file '{os.path.basename(output_file)}'\n")
+                    
+                    # Concatenate and trim to exact duration
+                    concat_cmd = [
+                        'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
+                        '-t', str(target_duration), '-c', 'copy', temp_output
+                    ]
+                    subprocess.run(concat_cmd, capture_output=True)
+                    os.remove(concat_file)
+                else:
+                    # Audio too long - trim it
+                    trim_cmd = [
+                        'ffmpeg', '-y', '-i', output_file,
+                        '-t', str(target_duration), '-c', 'copy', temp_output
+                    ]
+                    subprocess.run(trim_cmd, capture_output=True)
                 
-                # Create concat file
-                concat_file = output_file.replace('.mp3', '_concat.txt')
-                with open(concat_file, 'w') as f:
-                    for _ in range(loops):
-                        f.write(f"file '{os.path.basename(output_file)}'\n")
-                
-                # Concatenate and trim to exact duration
-                concat_cmd = [
-                    'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
-                    '-t', str(target_duration), '-c', 'copy', temp_output
-                ]
-                subprocess.run(concat_cmd, capture_output=True)
-                
-                # Replace original with extended
-                os.replace(temp_output, output_file)
-                os.remove(concat_file)
-                
-                logger.info(f"Audio extended to {target_duration}s")
+                # Replace original with adjusted
+                if os.path.exists(temp_output):
+                    os.replace(temp_output, output_file)
+                    logger.info(f"Audio adjusted to {target_duration}s")
+            
             
             logger.info("Audio generation complete.")
             return output_file

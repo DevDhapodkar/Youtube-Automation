@@ -71,74 +71,100 @@ class VideoEditor:
                     # It's already a video
                     processed_visuals.append(visual_path)
             
-            # Create concat list with processed visuals
-            with open(concat_file, 'w') as f:
-                for video_path in processed_visuals:
-                    # Repeat each video to fill duration
-                    f.write(f"file '{video_path}'\n")
+            # Calculate how many times to loop each video to fill duration
+            if not processed_visuals:
+                logger.error("No processed visuals available")
+                return None
             
-            # 3. Generate Subtitles (SRT)
+            # Create concat list - repeat videos to fill 60 seconds
+            # Each video plays for ~5-10 seconds, so we need multiple loops
+            concat_file = os.path.join(Config.ASSETS_DIR, "concat_list.txt")
+            with open(concat_file, 'w') as f:
+                # Calculate total loops needed (60s / number of clips)
+                loops_needed = max(3, int(duration / len(processed_visuals)) + 1)
+                
+                for _ in range(loops_needed):
+                    for video_path in processed_visuals:
+                        f.write(f"file '{video_path}'\n")
+            
+            # 3. Generate Subtitles (SRT) with proper timing
             srt_path = os.path.join(Config.ASSETS_DIR, "subtitles.srt")
             self._generate_srt(script_text, duration, srt_path)
             
             # 4. Concatenate and process videos with FFmpeg
             temp_video = os.path.join(Config.ASSETS_DIR, "temp_concatenated.mp4")
             
-            # Style for subtitles: Huge, Yellow with Black Outline, Bottom Center
-            # FontSize is somewhat arbitrary in ffmpeg, 24 is usually decent size, 30+ is huge.
-            # PrimaryColour=&H0000FFFF (Yellow in BGR hex: 00 + Blue=00, Green=FF, Red=FF) -> &H0000FFFF
-            # Actually ASS color format is &HAABBGGRR. Yellow is R=FF, G=FF, B=00. So &H0000FFFF.
-            # Wait, &H0000FFFF is Cyan? No, &H00(Alpha)00(B)FF(G)FF(R).
-            # Yellow: R=255, G=255, B=0. -> &H0000FFFF.
-            
-            subtitles_filter = f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=24,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=50'"
-
             # Get color grading filter for niche
             color_filter = self._get_color_filter(niche)
 
-            # Concatenate videos, scale, apply color grading, crop, and add subtitles
-            filter_chain = f"[0:v]scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={self.resolution[0]}:{self.resolution[1]}[vcropped];[vcropped]{subtitles_filter}[vfinal]"
+            # Build filter chain: scale → color grade → crop → subtitles
+            # Use setpts to ensure smooth playback without black frames
+            filter_chain = f"[0:v]setpts=PTS-STARTPTS,scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={self.resolution[0]}:{self.resolution[1]}[vcropped]"
             
+            # First pass: concatenate and apply filters WITHOUT subtitles
             concat_cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
                 '-i', audio_path,
-                '-t', str(duration),
                 '-filter_complex', filter_chain,
-                '-map', '[vfinal]',
+                '-map', '[vcropped]',
                 '-map', '1:a:0',
+                '-t', str(duration),
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '28',
+                '-preset', 'fast',
+                '-crf', '23',
                 '-c:a', 'aac',
-                '-b:a', '128k',
+                '-b:a', '192k',
                 '-shortest',
                 temp_video
             ]
             
             logger.info("Running FFmpeg concatenation...")
-            result = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(concat_cmd, capture_output=True, text=True, timeout=300)
             
             if result.returncode != 0:
                 logger.error(f"FFmpeg concat failed: {result.stderr}")
                 return None
             
+            # Second pass: Add subtitles
+            logger.info("Adding subtitles...")
+            final_output = output_path
+            
+            subtitle_cmd = [
+                'ffmpeg', '-y',
+                '-i', temp_video,
+                '-vf', f"subtitles={srt_path}:force_style='FontName=Arial Bold,FontSize=28,PrimaryColour=&H00FFFF00,OutlineColour=&H00000000,BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=60'",
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-c:a', 'copy',
+                final_output
+            ]
+            
+            result = subprocess.run(subtitle_cmd, capture_output=True, text=True, timeout=120)
+            
+            if result.returncode != 0:
+                logger.error(f"Subtitle burning failed: {result.stderr}")
+                # Use video without subtitles as fallback
+                os.rename(temp_video, final_output)
+            
             # Move temp video to final output
-            if os.path.exists(temp_video):
-                os.rename(temp_video, output_path)
-                logger.info(f"Video created successfully: {output_path}")
+            if os.path.exists(final_output):
+                logger.info(f"Video created successfully: {final_output}")
                 
                 # Cleanup
                 if os.path.exists(concat_file):
                     os.remove(concat_file)
                 if os.path.exists(srt_path):
                     os.remove(srt_path)
+                if os.path.exists(temp_video):
+                    os.remove(temp_video)
                 
-                return output_path
+                return final_output
             else:
-                logger.error("Temp video not created")
+                logger.error("Final video not created")
                 return None
 
         except subprocess.TimeoutExpired:
