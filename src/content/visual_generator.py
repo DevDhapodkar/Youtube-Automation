@@ -6,10 +6,43 @@ from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
+from src.content.image_generator import ImageGenerator
+
 class VisualGenerator:
     def __init__(self):
         self.api_key = Config.PEXELS_API_KEY
         self.base_url = "https://api.pexels.com/videos/search"
+        self.image_gen = ImageGenerator()
+
+    def get_mixed_visuals(self, query, script, niche="general", duration=60):
+        """
+        Get a mix of stock videos and AI generated images.
+        Target: Change visual every 2-3 seconds.
+        """
+        # Calculate needed visuals
+        # Average 2.5s per visual
+        needed_count = int(duration / 2.5) + 2 # Safety margin
+        
+        logger.info(f"Generating {needed_count} visuals for {duration}s video...")
+        
+        visuals = []
+        
+        # 1. Get Stock Videos (50% of visuals)
+        stock_count = needed_count // 2
+        stock_videos = self.get_stock_videos(query, count=stock_count)
+        visuals.extend(stock_videos)
+        
+        # 2. Generate AI Images (50% of visuals)
+        image_count = needed_count - len(stock_videos)
+        if image_count > 0:
+            logger.info(f"Generating {image_count} AI images...")
+            images = self.image_gen.create_images_for_script(script, niche, count=image_count)
+            visuals.extend(images)
+        
+        # Shuffle to mix them up
+        random.shuffle(visuals)
+        
+        return visuals
 
     def get_stock_videos(self, queries, count=3, duration_min=5, orientation='portrait'):
         """

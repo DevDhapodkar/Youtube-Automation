@@ -108,7 +108,7 @@ class VideoEditor:
             
             # 3. Generate Subtitles (SRT) with proper timing based on audio duration
             srt_path = os.path.join(Config.ASSETS_DIR, "subtitles.srt")
-            self._generate_srt(script_text, duration, srt_path)
+            self._generate_srt(script_text, duration, srt_path, audio_path)
             
             # 4. Concatenate and process videos with FFmpeg
             temp_video = os.path.join(Config.ASSETS_DIR, "temp_concatenated.mp4")
@@ -193,11 +193,109 @@ class VideoEditor:
             logger.error(f"Video creation failed: {e}", exc_info=True)
             return None
 
-    def _generate_srt(self, text, duration, output_path):
+    def _generate_srt(self, text, duration, output_path, audio_path=None):
         """
-        Generate SRT subtitle file with improved timing.
-        Shows 2-3 words at a time for better sync with audio.
+        Generate SRT subtitle file with improved timing using word-level timestamps if available.
         """
+        timestamps_path = None
+        if audio_path:
+            timestamps_path = audio_path.replace('.mp3', '_timestamps.json')
+        
+        if timestamps_path and os.path.exists(timestamps_path):
+            logger.info(f"Using exact timestamps from {timestamps_path}")
+            try:
+                with open(timestamps_path, 'r') as f:
+                    raw_timestamps = json.load(f)
+                
+                # Process timestamps: if they are sentences, split into words with linear interpolation
+                word_timestamps = []
+                for item in raw_timestamps:
+                    text = item['word'] # This might be a sentence now
+                    start = item['start']
+                    end = item['end']
+                    duration = end - start
+                    
+                    words = text.split()
+                    if not words:
+                        continue
+                        
+                    if len(words) == 1:
+                        word_timestamps.append(item)
+                    else:
+                        # Interpolate
+                        word_duration = duration / len(words)
+                        for i, w in enumerate(words):
+                            w_start = start + (i * word_duration)
+                            w_end = w_start + word_duration
+                            word_timestamps.append({
+                                'word': w,
+                                'start': w_start,
+                                'end': w_end
+                            })
+                
+                srt_content = []
+                
+                # Group words into chunks of 1-3 words
+                current_chunk = []
+                chunk_start = 0.0
+                chunk_end = 0.0
+                
+                chunk_index = 1
+                
+                for i, wt in enumerate(word_timestamps):
+                    word = wt['word']
+                    start = wt['start']
+                    end = wt['end']
+                    
+                    if not current_chunk:
+                        chunk_start = start
+                    
+                    current_chunk.append(word)
+                    chunk_end = end
+                    
+                    # Decide whether to close the chunk
+                    # Close if:
+                    # 1. Chunk has 3 words (max size)
+                    # 2. End of sentence (punctuation)
+                    # 3. Significant pause after this word (next word starts > 0.2s later)
+                    # 4. Last word
+                    
+                    close_chunk = False
+                    if len(current_chunk) >= 3:
+                        close_chunk = True
+                    elif word.strip()[-1] in ['.', '!', '?', ',']:
+                        close_chunk = True
+                    elif i < len(word_timestamps) - 1:
+                        next_start = word_timestamps[i+1]['start']
+                        if next_start - end > 0.2: # Pause detection
+                            close_chunk = True
+                    else:
+                        close_chunk = True # Last word
+                    
+                    if close_chunk:
+                        # Format times
+                        start_str = self._format_srt_time(chunk_start)
+                        end_str = self._format_srt_time(chunk_end)
+                        
+                        srt_content.append(f"{chunk_index}")
+                        srt_content.append(f"{start_str} --> {end_str}")
+                        srt_content.append(" ".join(current_chunk))
+                        srt_content.append("")
+                        
+                        chunk_index += 1
+                        current_chunk = []
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(srt_content))
+                
+                logger.info(f"Generated accurate SRT with {chunk_index-1} chunks")
+                return
+                
+            except Exception as e:
+                logger.error(f"Failed to use timestamps: {e}. Falling back to linear timing.")
+        
+        # Fallback to linear timing if no timestamps
+        logger.warning("No timestamps found, using linear timing fallback")
         words = text.split()
         total_words = len(words)
         

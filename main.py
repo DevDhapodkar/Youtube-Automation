@@ -59,7 +59,8 @@ def job_cycle():
         # Get visuals based on keywords from topic
         # Simple keyword extraction (first 2 words)
         query = " ".join(topic.split()[:2])
-        visual_paths = visual_gen.get_stock_videos(query, count=3)
+        # Use mixed visuals (AI + Stock)
+        visual_paths = visual_gen.get_mixed_visuals(query, script, niche="general", duration=60)
         
         # Step 3: Production
         logger.info("Step 3: Producing video...")
