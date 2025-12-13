@@ -2,22 +2,78 @@ import logging
 import requests
 import random
 import os
+import time
 from config.settings import Config
+from gradio_client import Client
 
 logger = logging.getLogger(__name__)
 
 from src.content.image_generator import ImageGenerator
+
+class VideoGenerator:
+    """
+    Generates AI videos using Hugging Face Spaces (Free).
+    NOTE: Many free text-to-video spaces are gated or unreliable.
+    This is kept as an optional feature that gracefully fails.
+    """
+    def __init__(self):
+        # Note: Free video generation spaces are often gated or unavailable
+        # This feature is experimental and may not work consistently
+        self.enabled = False  # Disabled by default due to reliability issues
+        self.space_id = None
+        self.client = None
+        logger.info("VideoGenerator initialized (disabled - free spaces unreliable)")
+        
+    def generate_video(self, prompt, output_path):
+        """
+        Generate a short video from text.
+        Returns None if disabled or fails.
+        """
+        if not self.enabled:
+            logger.debug("Video generation disabled - using images and stock videos instead")
+            return None
+            
+        try:
+            if not self.client:
+                logger.info(f"Connecting to Hugging Face Space: {self.space_id}")
+                self.client = Client(self.space_id)
+            
+            logger.info(f"Generating AI video for: {prompt[:50]}...")
+            
+            result = self.client.predict(
+				prompt,
+				-1,
+				api_name="/infer"
+            )
+            
+            video_path = result
+            
+            if os.path.exists(video_path):
+                import shutil
+                shutil.copy(video_path, output_path)
+                logger.info(f"AI video generated: {output_path}")
+                return output_path
+            else:
+                logger.error("Generated video file not found.")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Video generation failed (expected for free tier): {e}")
+            return None
 
 class VisualGenerator:
     def __init__(self):
         self.api_key = Config.PEXELS_API_KEY
         self.base_url = "https://api.pexels.com/videos/search"
         self.image_gen = ImageGenerator()
+        self.video_gen = VideoGenerator()
 
     def get_mixed_visuals(self, query, script, niche="general", duration=60):
         """
         Get a mix of stock videos and AI generated images.
         Target: Change visual every 2-3 seconds.
+        
+        Mix: 50% Pexels stock videos + 50% Pollinations AI images
         """
         # Calculate needed visuals
         # Average 2.5s per visual
@@ -32,15 +88,18 @@ class VisualGenerator:
         stock_videos = self.get_stock_videos(query, count=stock_count)
         visuals.extend(stock_videos)
         
-        # 2. Generate AI Images (50% of visuals)
+        # 2. Generate AI Images with Pollinations (50% of visuals)
         image_count = needed_count - len(stock_videos)
+        
         if image_count > 0:
-            logger.info(f"Generating {image_count} AI images...")
+            logger.info(f"Generating {image_count} AI images with Pollinations.ai...")
             images = self.image_gen.create_images_for_script(script, niche, count=image_count)
             visuals.extend(images)
         
         # Shuffle to mix them up
         random.shuffle(visuals)
+        
+        logger.info(f"Total visuals generated: {len(visuals)} ({len(stock_videos)} videos, {len(visuals) - len(stock_videos)} AI images)")
         
         return visuals
 

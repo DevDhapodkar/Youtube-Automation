@@ -195,7 +195,8 @@ class VideoEditor:
 
     def _generate_srt(self, text, duration, output_path, audio_path=None):
         """
-        Generate SRT subtitle file with improved timing using word-level timestamps if available.
+        Generate SRT subtitle file with sentence-based chunking for better sync.
+        Uses actual timestamps from edge-tts for accurate synchronization.
         """
         timestamps_path = None
         if audio_path:
@@ -207,132 +208,221 @@ class VideoEditor:
                 with open(timestamps_path, 'r') as f:
                     raw_timestamps = json.load(f)
                 
-                # Process timestamps: if they are sentences, split into words with linear interpolation
-                word_timestamps = []
-                for item in raw_timestamps:
-                    text = item['word'] # This might be a sentence now
-                    start = item['start']
-                    end = item['end']
-                    duration = end - start
-                    
-                    words = text.split()
-                    if not words:
-                        continue
-                        
-                    if len(words) == 1:
-                        word_timestamps.append(item)
-                    else:
-                        # Interpolate
-                        word_duration = duration / len(words)
-                        for i, w in enumerate(words):
-                            w_start = start + (i * word_duration)
-                            w_end = w_start + word_duration
-                            word_timestamps.append({
-                                'word': w,
-                                'start': w_start,
-                                'end': w_end
-                            })
+                # Check if timestamps are word-level or sentence-level
+                # If average entry has only 1-2 words, it's word-level
+                avg_words = sum(len(item['word'].split()) for item in raw_timestamps) / len(raw_timestamps) if raw_timestamps else 0
                 
                 srt_content = []
-                
-                # Group words into chunks of 1-3 words
-                current_chunk = []
-                chunk_start = 0.0
-                chunk_end = 0.0
-                
                 chunk_index = 1
                 
-                for i, wt in enumerate(word_timestamps):
-                    word = wt['word']
-                    start = wt['start']
-                    end = wt['end']
+                if avg_words < 3:
+                    # Word-level timestamps - group into sentences
+                    logger.info("Detected word-level timestamps, grouping into sentences...")
                     
-                    if not current_chunk:
-                        chunk_start = start
+                    current_sentence = []
+                    sentence_start = None
+                    sentence_end = None
                     
-                    current_chunk.append(word)
-                    chunk_end = end
-                    
-                    # Decide whether to close the chunk
-                    # Close if:
-                    # 1. Chunk has 3 words (max size)
-                    # 2. End of sentence (punctuation)
-                    # 3. Significant pause after this word (next word starts > 0.2s later)
-                    # 4. Last word
-                    
-                    close_chunk = False
-                    if len(current_chunk) >= 3:
-                        close_chunk = True
-                    elif word.strip()[-1] in ['.', '!', '?', ',']:
-                        close_chunk = True
-                    elif i < len(word_timestamps) - 1:
-                        next_start = word_timestamps[i+1]['start']
-                        if next_start - end > 0.2: # Pause detection
-                            close_chunk = True
-                    else:
-                        close_chunk = True # Last word
-                    
-                    if close_chunk:
-                        # Format times
-                        start_str = self._format_srt_time(chunk_start)
-                        end_str = self._format_srt_time(chunk_end)
+                    for i, item in enumerate(raw_timestamps):
+                        word = item['word'].strip()
+                        start = item['start']
+                        end = item['end']
                         
-                        srt_content.append(f"{chunk_index}")
-                        srt_content.append(f"{start_str} --> {end_str}")
-                        srt_content.append(" ".join(current_chunk))
-                        srt_content.append("")
+                        if not word:
+                            continue
                         
-                        chunk_index += 1
-                        current_chunk = []
+                        # Start new sentence if needed
+                        if not current_sentence:
+                            sentence_start = start
+                        
+                        current_sentence.append(word)
+                        sentence_end = end
+                        
+                        # Check if this word ends a sentence
+                        ends_sentence = False
+                        if word.rstrip()[-1] in ['.', '!', '?']:
+                            ends_sentence = True
+                        elif i == len(raw_timestamps) - 1:
+                            # Last word
+                            ends_sentence = True
+                        
+                        if ends_sentence:
+                            # Create subtitle for this sentence
+                            sentence_text = ' '.join(current_sentence)
+                            
+                            # For very long sentences (>15 words), split into two
+                            words = current_sentence
+                            if len(words) > 15:
+                                mid = len(words) // 2
+                                
+                                # Look for good split points
+                                split_points = []
+                                for j, w in enumerate(words):
+                                    if w.rstrip(',') in ['and', 'but', 'or', 'so', 'yet', 'for', 'nor'] or ',' in w:
+                                        split_points.append(j)
+                                
+                                if split_points:
+                                    split_idx = min(split_points, key=lambda x: abs(x - mid))
+                                else:
+                                    split_idx = mid
+                                
+                                # Calculate mid time
+                                mid_time = sentence_start + (sentence_end - sentence_start) * (split_idx + 1) / len(words)
+                                
+                                # First half
+                                first_half = ' '.join(words[:split_idx + 1])
+                                start_str = self._format_srt_time(sentence_start)
+                                mid_str = self._format_srt_time(mid_time)
+                                srt_content.append(f"{chunk_index}")
+                                srt_content.append(f"{start_str} --> {mid_str}")
+                                srt_content.append(first_half)
+                                srt_content.append("")
+                                chunk_index += 1
+                                
+                                # Second half
+                                second_half = ' '.join(words[split_idx + 1:])
+                                end_str = self._format_srt_time(sentence_end)
+                                srt_content.append(f"{chunk_index}")
+                                srt_content.append(f"{mid_str} --> {end_str}")
+                                srt_content.append(second_half)
+                                srt_content.append("")
+                                chunk_index += 1
+                            else:
+                                # Use sentence as-is
+                                start_str = self._format_srt_time(sentence_start)
+                                end_str = self._format_srt_time(sentence_end)
+                                srt_content.append(f"{chunk_index}")
+                                srt_content.append(f"{start_str} --> {end_str}")
+                                srt_content.append(sentence_text)
+                                srt_content.append("")
+                                chunk_index += 1
+                            
+                            # Reset for next sentence
+                            current_sentence = []
+                            sentence_start = None
+                            sentence_end = None
+                else:
+                    # Sentence-level timestamps - use directly
+                    logger.info("Detected sentence-level timestamps, using directly...")
+                    
+                    for item in raw_timestamps:
+                        subtitle_text = item['word'].strip()
+                        start = item['start']
+                        end = item['end']
+                        
+                        if not subtitle_text:
+                            continue
+                        
+                        # For very long sentences (>15 words), split into multiple lines
+                        words = subtitle_text.split()
+                        if len(words) > 15:
+                            mid = len(words) // 2
+                            
+                            split_points = []
+                            for i, word in enumerate(words):
+                                if word.rstrip(',') in ['and', 'but', 'or', 'so', 'yet', 'for', 'nor'] or ',' in word:
+                                    split_points.append(i)
+                            
+                            if split_points:
+                                split_idx = min(split_points, key=lambda x: abs(x - mid))
+                            else:
+                                split_idx = mid
+                            
+                            first_half = ' '.join(words[:split_idx + 1])
+                            second_half = ' '.join(words[split_idx + 1:])
+                            
+                            mid_time = start + (end - start) * (split_idx + 1) / len(words)
+                            
+                            # First half
+                            start_str = self._format_srt_time(start)
+                            mid_str = self._format_srt_time(mid_time)
+                            srt_content.append(f"{chunk_index}")
+                            srt_content.append(f"{start_str} --> {mid_str}")
+                            srt_content.append(first_half)
+                            srt_content.append("")
+                            chunk_index += 1
+                            
+                            # Second half
+                            end_str = self._format_srt_time(end)
+                            srt_content.append(f"{chunk_index}")
+                            srt_content.append(f"{mid_str} --> {end_str}")
+                            srt_content.append(second_half)
+                            srt_content.append("")
+                            chunk_index += 1
+                        else:
+                            # Use the sentence as-is
+                            start_str = self._format_srt_time(start)
+                            end_str = self._format_srt_time(end)
+                            
+                            srt_content.append(f"{chunk_index}")
+                            srt_content.append(f"{start_str} --> {end_str}")
+                            srt_content.append(subtitle_text)
+                            srt_content.append("")
+                            chunk_index += 1
                 
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(srt_content))
                 
-                logger.info(f"Generated accurate SRT with {chunk_index-1} chunks")
+                logger.info(f"Generated sentence-based SRT with {chunk_index-1} subtitles")
                 return
                 
             except Exception as e:
-                logger.error(f"Failed to use timestamps: {e}. Falling back to linear timing.")
+                logger.error(f"Failed to use timestamps: {e}. Falling back to sentence parsing.")
         
-        # Fallback to linear timing if no timestamps
-        logger.warning("No timestamps found, using linear timing fallback")
-        words = text.split()
-        total_words = len(words)
+        # Fallback: Parse text into sentences manually
+        logger.warning("No timestamps found, using sentence-based parsing fallback")
         
-        # Calculate words per second
-        words_per_second = total_words / duration
+        import re
+        # Split text into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
         
-        # Show 2-3 words at a time (average 2.5)
-        words_per_chunk = 3 if words_per_second > 3 else 2
+        if not sentences:
+            logger.error("No sentences found in text")
+            return
         
-        # Calculate time per chunk
-        chunks = []
-        for i in range(0, total_words, words_per_chunk):
-            chunk_words = words[i:i + words_per_chunk]
-            chunks.append(' '.join(chunk_words))
+        # Calculate timing for each sentence based on word count
+        total_words = sum(len(s.split()) for s in sentences)
+        time_per_word = duration / total_words if total_words > 0 else 0
         
-        num_chunks = len(chunks)
-        time_per_chunk = duration / num_chunks
-        
-        # Generate SRT content
         srt_content = []
-        for i, chunk in enumerate(chunks):
-            start_time = i * time_per_chunk
-            end_time = (i + 1) * time_per_chunk
+        current_time = 0.0
+        
+        for i, sentence in enumerate(sentences, 1):
+            words_in_sentence = len(sentence.split())
+            sentence_duration = words_in_sentence * time_per_word
             
-            # Format times as HH:MM:SS,mmm
+            # Ensure minimum display time of 1.5 seconds
+            sentence_duration = max(sentence_duration, 1.5)
+            
+            # Ensure maximum display time of 6 seconds
+            sentence_duration = min(sentence_duration, 6.0)
+            
+            start_time = current_time
+            end_time = current_time + sentence_duration
+            
+            # Don't exceed total duration
+            if end_time > duration:
+                end_time = duration
+            
             start_str = self._format_srt_time(start_time)
             end_str = self._format_srt_time(end_time)
             
-            srt_content.append(f"{i + 1}")
+            srt_content.append(f"{i}")
             srt_content.append(f"{start_str} --> {end_str}")
-            srt_content.append(chunk)
-            srt_content.append("")  # Empty line between entries
+            srt_content.append(sentence)
+            srt_content.append("")
+            
+            current_time = end_time
+            
+            # Stop if we've reached the end
+            if current_time >= duration:
+                break
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(srt_content))
         
-        logger.info(f"Generated SRT with {num_chunks} subtitle chunks ({words_per_chunk} words each)")
+        logger.info(f"Generated fallback sentence-based SRT with {len(sentences)} subtitles")
     
     def _format_srt_time(self, seconds):
         """Format seconds as SRT timestamp: HH:MM:SS,mmm"""

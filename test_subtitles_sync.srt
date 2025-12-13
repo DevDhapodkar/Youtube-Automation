@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:04,125
+Welcome to this amazing video about artificial intelligence.
+
+2
+00:00:04,125 --> 00:00:08,250
+AI is transforming the world in incredible ways.
+
+3
+00:00:08,250 --> 00:00:12,375
+From healthcare to entertainment, the possibilities are endless.
+
+4
+00:00:12,375 --> 00:00:17,016
+Let's explore how this technology is shaping our future.

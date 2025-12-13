@@ -12,3 +12,5 @@ pytrends
 proglog
 fastapi
 uvicorn
+gradio_client
+gtts
