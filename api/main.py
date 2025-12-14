@@ -57,6 +57,7 @@ class AgentState:
     is_authenticated = os.path.exists(os.path.join(Config.BASE_DIR, '..', 'token.pickle'))
     selected_niche = Niche.GENERAL
     schedule = [] # ["10:00", "18:00"]
+    current_task = None  # Store reference to running task
 
 state = AgentState()
 clients = []
@@ -80,28 +81,47 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        disconnected = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to send to connection: {e}")
+                disconnected.append(connection)
+        
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
 
 manager = ConnectionManager()
 
-# Background Task
+# Background Task for real-time log broadcasting
 async def log_broadcaster():
     while True:
         try:
-            while not log_queue.empty():
-                log = log_queue.get_nowait()
-                await manager.broadcast({"type": "log", "data": log})
-            await asyncio.sleep(0.1)
+            if not log_queue.empty():
+                # Process all available logs immediately
+                logs_to_send = []
+                while not log_queue.empty():
+                    try:
+                        log = log_queue.get_nowait()
+                        logs_to_send.append(log)
+                    except queue.Empty:
+                        break
+                
+                # Broadcast all logs
+                for log in logs_to_send:
+                    await manager.broadcast({"type": "log", "data": log})
+            
+            # Short sleep for responsiveness
+            await asyncio.sleep(0.05)  # 50ms for near real-time updates
         except Exception as e:
-            print(f"Log broadcast error: {e}")
-            await asyncio.sleep(1)
+            logger.error(f"Log broadcast error: {e}")
+            await asyncio.sleep(0.5)
 
 @app.on_event("startup")
 async def startup_event():
@@ -117,96 +137,77 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
     state.is_running = True
     state.current_action = f"Starting Cycle ({niche.value})..."
     await manager.broadcast({"type": "status", "data": state.current_action})
+    await manager.broadcast({"type": "state", "data": {"is_running": True}})
     
     try:
         # 1. Topic Selection based on Niche
         state.current_action = "Selecting Topic..."
         await manager.broadcast({"type": "status", "data": state.current_action})
         
+        # Check if stopped
+        if not state.is_running:
+            raise asyncio.CancelledError("Task stopped by user")
+        
         # Use AI to generate topics dynamically
         from src.content.topic_generator import TopicGenerator
-        topic_gen = TopicGenerator()
         
+        # Run blocking topic generation in thread
         if niche == Niche.NEWS:
-            # For news, use trending topics
             trend_analyzer = TrendAnalyzer()
-            topic = f"Breaking: {trend_analyzer.select_topic()}"
+            topic = await asyncio.to_thread(trend_analyzer.select_topic)
+            if topic:
+                topic = f"Breaking: {topic}"
         elif niche == Niche.GENERAL or niche == Niche.TRENDING:
-            # For general, use trending topics
             trend_analyzer = TrendAnalyzer()
-            topic = trend_analyzer.select_topic()
+            topic = await asyncio.to_thread(trend_analyzer.select_topic)
         else:
-            # For all other niches, generate AI topics
-            topic = topic_gen.generate_topic(niche.value)
+            topic_gen = TopicGenerator()
+            topic = await asyncio.to_thread(topic_gen.generate_topic, niche.value)
             
         await manager.broadcast({"type": "log", "data": f"Selected Topic: {topic}"})
         
         if not topic:
             raise Exception("No topic selected")
 
-        # 2. Content
+        # Check if stopped
+        if not state.is_running:
+            raise asyncio.CancelledError("Task stopped by user")
+
+        # 2. Content Generation
         state.current_action = f"Generating Script for: {topic}"
         await manager.broadcast({"type": "status", "data": state.current_action})
         
         script_gen = ScriptGenerator()
-        script = script_gen.generate_script(topic, niche=niche)
+        # Run blocking script generation in thread
+        script = await asyncio.to_thread(script_gen.generate_script, topic, niche=niche)
         await manager.broadcast({"type": "log", "data": "Script generated."})
         
-        state.current_action = "Generating Audio..."
-        await manager.broadcast({"type": "status", "data": state.current_action})
-        audio_gen = AudioGenerator()
-        audio_path = os.path.join(Config.ASSETS_DIR, "temp_audio.mp3")
-        audio_gen.generate_audio(script, audio_path, target_duration=60)
+        # Check if stopped
+        if not state.is_running:
+            raise asyncio.CancelledError("Task stopped by user")
         
-        # Add ambient sound effects
-        state.current_action = "Adding Sound Effects..."
-        await manager.broadcast({"type": "status", "data": state.current_action})
-        from src.audio.sound_effects import SoundEffectGenerator
-        sfx_gen = SoundEffectGenerator()
-        ambient_sound = sfx_gen.get_ambient_sound(niche.value)
-        
-        if ambient_sound:
-            mixed_audio_path = os.path.join(Config.ASSETS_DIR, "audio_with_sfx.mp3")
-            audio_path = sfx_gen.mix_audio(audio_path, ambient_sound, mixed_audio_path, ambient_volume=0.2)
-        
-        state.current_action = "Gathering Visuals..."
-        await manager.broadcast({"type": "status", "data": state.current_action})
-        visual_gen = VisualGenerator()
-        
-        # Generate multiple queries for better variety
-        base_query = " ".join(topic.split()[:2])
-        queries = [base_query]
-        if niche == Niche.HORROR:
-            queries.extend(["scary dark", "creepy forest", "nightmare"])
-        elif niche == Niche.HORROR_STORIES:
-            queries.extend(["dark hallway", "abandoned building night", "eerie shadows", "fog mysterious"])
-        elif niche == Niche.HISTORY:
-            queries.extend(["ancient ruins", "historical vintage", "museum"])
-        elif niche == Niche.SCP:
-            queries.extend(["laboratory dark", "military secret", "monster"])
-        elif niche == Niche.LIFE_ADVICE:
-            queries.extend(["meditation", "success business", "calm nature"])
-        else:
-            queries.extend(["cinematic", "technology", "abstract background"])
-            
-        visual_paths = visual_gen.get_stock_videos(queries, count=8)
-        
-        # If we don't have enough visuals, generate AI images
-        if len(visual_paths) < 2:
-            logger.info("Insufficient stock footage, generating AI images...")
-            from src.content.image_generator import ImageGenerator
-            img_gen = ImageGenerator()
-            ai_images = img_gen.create_images_for_script(script, niche.value, count=3)
-            visual_paths.extend(ai_images)
-            await manager.broadcast({"type": "log", "data": f"Generated {len(ai_images)} AI images"})
-        
-        # 3. Production - Using FFmpeg (memory efficient)
-        state.current_action = "Editing Video..."
+        # 3. Scene-Based Video Creation
+        state.current_action = "Creating Video (Scene-Based)..."
         await manager.broadcast({"type": "status", "data": state.current_action})
         
-        video_editor = VideoEditor()
+        from src.video.scene_based_orchestrator import SceneBasedVideoOrchestrator
+        orchestrator = SceneBasedVideoOrchestrator()
+        
         video_path = os.path.join(Config.ASSETS_DIR, "final_video.mp4")
-        final_video = video_editor.create_short(audio_path, visual_paths, script, video_path, niche=niche.value)
+        
+        # Run blocking video creation in thread
+        # This is the heavy lifting - definitely needs to be in a thread!
+        final_video = await asyncio.to_thread(
+            orchestrator.create_video,
+            script=script,
+            output_path=video_path,
+            target_duration=60,
+            niche=niche.value
+        )
+        
+        # Check if stopped
+        if not state.is_running:
+            raise asyncio.CancelledError("Task stopped by user")
         
         # 4. Upload
         state.current_action = "Uploading..."
@@ -218,24 +219,33 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
              await manager.broadcast({"type": "error", "data": "YouTube Auth failed. Please authenticate first."})
              raise Exception("Not Authenticated")
 
-        if final_video:
+        if final_video and os.path.exists(final_video):
              description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts #{niche.value}"
              tags = ["shorts", "ai", "facts", niche.value, topic.split()[0]]
              
              # UNCOMMENT TO ENABLE REAL UPLOAD
-             video_id = uploader.upload_video(final_video, topic, description, tags)
+             video_id = await asyncio.to_thread(uploader.upload_video, final_video, topic, description, tags)
              await manager.broadcast({"type": "log", "data": f"Uploaded! ID: {video_id}"})
              
              # await manager.broadcast({"type": "log", "data": "Upload simulated (Safety Mode). Uncomment in api/main.py to enable."})
+        else:
+            logger.error("Video generation failed")
+            await manager.broadcast({"type": "error", "data": "Video generation failed"})
         
         state.current_action = "Cycle Complete"
         await manager.broadcast({"type": "status", "data": state.current_action})
 
+    except asyncio.CancelledError:
+        state.current_action = "Stopped by user"
+        await manager.broadcast({"type": "status", "data": state.current_action})
+        await manager.broadcast({"type": "log", "data": "⚠️ Task cancelled by user"})
     except Exception as e:
         state.current_action = f"Error: {str(e)}"
         await manager.broadcast({"type": "error", "data": str(e)})
+        logger.error(f"Automation cycle error: {e}", exc_info=True)
     finally:
         state.is_running = False
+        state.current_task = None
         await manager.broadcast({"type": "state", "data": {"is_running": False}})
 
 # Routes
@@ -280,13 +290,35 @@ async def update_config(config: ConfigUpdate):
 async def start_agent():
     if state.is_running:
         return {"message": "Already running"}
-    asyncio.create_task(run_automation_cycle(state.selected_niche))
+    
+    # Create and store task reference
+    task = asyncio.create_task(run_automation_cycle(state.selected_niche))
+    state.current_task = task
+    
     return {"message": "Started"}
 
 @app.post("/stop")
-def stop_agent():
-    state.is_running = False 
-    return {"message": "Stopping..."}
+async def stop_agent():
+    """Stop the running automation task."""
+    if not state.is_running:
+        return {"message": "Not running"}
+    
+    # Set flag to stop
+    state.is_running = False
+    
+    # Cancel the task if it exists
+    if state.current_task and not state.current_task.done():
+        state.current_task.cancel()
+        try:
+            await state.current_task
+        except asyncio.CancelledError:
+            pass
+    
+    state.current_action = "Stopped"
+    await manager.broadcast({"type": "status", "data": "Stopped"})
+    await manager.broadcast({"type": "log", "data": "🛑 Agent stopped"})
+    
+    return {"message": "Stopped"}
 
 @app.post("/auth")
 def authenticate_youtube():

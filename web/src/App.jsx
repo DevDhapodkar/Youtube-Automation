@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Square, Activity, Terminal, Settings, Youtube, CheckCircle, AlertCircle, Sparkles, TrendingUp, Zap, X, Check } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { JellySwitch } from './components/JellySwitch';
 
 function cn(...inputs) {
     return twMerge(clsx(inputs));
@@ -69,21 +70,23 @@ function App() {
         logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
 
-    const startAgent = async () => {
-        try {
-            await fetch('http://localhost:8000/start', { method: 'POST' });
-            setIsRunning(true);
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const stopAgent = async () => {
-        try {
-            await fetch('http://localhost:8000/stop', { method: 'POST' });
-            setIsRunning(false);
-        } catch (e) {
-            console.error(e);
+    const handleSwitchToggle = async (newState) => {
+        if (newState && !isRunning) {
+            // Start
+            try {
+                await fetch('http://localhost:8000/start', { method: 'POST' });
+                setIsRunning(true);
+            } catch (e) {
+                console.error(e);
+            }
+        } else if (!newState && isRunning) {
+            // Stop
+            try {
+                await fetch('http://localhost:8000/stop', { method: 'POST' });
+                setIsRunning(false);
+            } catch (e) {
+                console.error(e);
+            }
         }
     };
 
@@ -167,8 +170,7 @@ function App() {
                 <motion.header
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center justify-between pb-6 border-b border-white/20"
-                >
+                    className="flex items-center justify-between pb-6 border-b border-white/20">
                     <div className="flex items-center gap-4">
                         <motion.div
                             className="p-4 bg-gradient-red rounded-2xl shadow-glow-red-lg"
@@ -210,7 +212,7 @@ function App() {
                     </motion.button>
                 </motion.header>
 
-                {/* Main Grid - rest of the code stays the same */}
+                {/* Main Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Status Card */}
                     <div className="lg:col-span-2 space-y-6">
@@ -259,39 +261,47 @@ function App() {
                             </div>
                         </motion.div>
 
-                        {/* Controls */}
+                        {/* Jelly Switch Control */}
                         <motion.div
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.2 }}
-                            className="grid grid-cols-2 gap-6"
+                            className="glass rounded-3xl p-10 border border-white/20"
                         >
-                            <motion.button
-                                onClick={startAgent}
-                                disabled={isRunning}
-                                className="group relative overflow-hidden rounded-3xl bg-gradient-red p-8 font-black text-2xl shadow-glow-red hover:shadow-glow-red-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-glow-red"
-                                whileHover={{ scale: isRunning ? 1 : 1.03 }}
-                                whileTap={{ scale: isRunning ? 1 : 0.97 }}
-                            >
-                                <div className="absolute inset-0 shimmer opacity-0 group-hover:opacity-100" />
-                                <div className="flex items-center justify-center gap-3 relative z-10 text-white">
-                                    <Play className="w-8 h-8 fill-current drop-shadow-lg" />
-                                    <span className="drop-shadow-lg">Start</span>
-                                </div>
-                            </motion.button>
+                            <div className="flex flex-col items-center gap-6">
+                                <h3 className="text-2xl font-black text-white flex items-center gap-3">
+                                    <Zap className="w-7 h-7 text-crimson-400" />
+                                    Agent Control
+                                </h3>
 
-                            <motion.button
-                                onClick={stopAgent}
-                                disabled={!isRunning}
-                                className="rounded-3xl glass border-2 border-crimson-500/50 text-white p-8 font-black text-2xl hover:glass-red hover:border-crimson-500 hover:shadow-glow-red transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                whileHover={{ scale: !isRunning ? 1 : 1.03 }}
-                                whileTap={{ scale: !isRunning ? 1 : 0.97 }}
-                            >
-                                <div className="flex items-center justify-center gap-3 drop-shadow-lg">
-                                    <Square className="w-8 h-8 fill-current" />
-                                    <span>Stop</span>
+                                <div className="flex items-center gap-6">
+                                    <span className={cn(
+                                        "text-lg font-bold transition-colors",
+                                        !isRunning ? "text-white" : "text-gray-500"
+                                    )}>
+                                        OFF
+                                    </span>
+
+                                    <JellySwitch
+                                        checked={isRunning}
+                                        onChange={handleSwitchToggle}
+                                        size="large"
+                                    />
+
+                                    <span className={cn(
+                                        "text-lg font-bold transition-colors",
+                                        isRunning ? "text-crimson-400" : "text-gray-500"
+                                    )}>
+                                        ON
+                                    </span>
                                 </div>
-                            </motion.button>
+
+                                <p className="text-gray-400 text-sm text-center">
+                                    {isRunning
+                                        ? "Agent is running - toggle to stop"
+                                        : "Agent is idle - toggle to start"}
+                                </p>
+                            </div>
                         </motion.div>
                     </div>
 

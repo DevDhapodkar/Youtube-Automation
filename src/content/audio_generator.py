@@ -1,343 +1,331 @@
 import logging
 import asyncio
 import edge_tts
+import requests
+import json
+import os
 from config.settings import Config
 import concurrent.futures
-import json
 
 logger = logging.getLogger(__name__)
 
-class AudioGenerator:
-    def __init__(self):
-        # Voice options: en-US-ChristopherNeural, en-US-EricNeural, en-US-GuyNeural, en-US-JennyNeural, en-US-AriaNeural
-        # JennyNeural is friendly and conversational, AndrewNeural is natural male voice
-        self.voice = "en-US-JennyNeural"  # More natural and friendly
-        
-        # SSML prosody settings for more natural speech
-        self.rate = "0.95"  # Slightly slower for clarity (1.0 is normal)
-        self.pitch = "+2%"  # Slight pitch variation for naturalness
-        self.volume = "+10%"  # Slightly louder for better clarity
+
+class ElevenLabsGenerator:
+    """
+    Generate natural-sounding audio using ElevenLabs API.
+    Free tier: 10,000 characters/month (~10 videos)
+    """
     
-    def _wrap_with_ssml(self, text):
+    def __init__(self):
+        self.api_key = Config.ELEVENLABS_API_KEY
+        self.voice_id = Config.ELEVENLABS_VOICE_ID
+        self.model = Config.ELEVENLABS_MODEL
+        self.base_url = "https://api.elevenlabs.io/v1"
+    
+    def generate_audio(self, text: str, output_file: str) -> bool:
         """
-        Wrap text with SSML tags for more natural speech.
-        Adds prosody controls for better voice quality.
-        Note: Keep SSML simple for edge-tts compatibility.
-        """
-        # Simple SSML with just prosody - edge-tts doesn't support all SSML features
-        ssml = f'''<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
-    <prosody rate="{self.rate}" pitch="{self.pitch}" volume="{self.volume}">
-        {text}
-    </prosody>
-</speak>'''
-        return ssml 
-
-    async def _generate_audio_async(self, text, output_file):
-        communicate = edge_tts.Communicate(text, self.voice)
+        Generate audio using ElevenLabs API.
         
-        # Prepare to capture subtitles
-        submaker = edge_tts.SubMaker()
-        
-        with open(output_file, "wb") as file:
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    file.write(chunk["data"])
-                elif chunk["type"] == "WordBoundary":
-                    submaker.feed(chunk)
-
-        # Save timestamps to JSON
-        import json
-        timestamps_file = output_file.replace('.mp3', '_timestamps.json')
-        
-        # Convert SubMaker events to our format
-        # SubMaker stores events as (offset, duration, text)
-        # We want a list of dicts with start, end, word
-        word_timestamps = []
-        
-        # Access the internal events list from SubMaker (it's a list of tuples)
-        # Each tuple is (time, duration, text)
-        # time is in seconds (float)
-        
-        # Note: edge_tts.SubMaker might not expose events directly in all versions,
-        # but we can capture them manually from the chunk loop if needed.
-        # Actually, let's just capture them manually in the loop to be safe.
-        pass
-
-    async def _generate_audio_with_timestamps_async(self, text, output_file, voice=None):
-        """
-        Generate audio with timestamps using edge-tts.
-        Tries multiple voices if the primary one fails.
-        Uses SSML for more natural speech.
-        """
-        if voice is None:
-            voice = self.voice
-        
-        # Note: SSML with prosody is causing edge-tts to fail
-        # Using plain text for now - edge-tts voices are already high quality
-        # TODO: Investigate SSML compatibility with edge-tts
-        text_to_use = text  # Use plain text instead of SSML
+        Args:
+            text: Text to convert to speech
+            output_file: Path to save MP3 file
             
-        # List of fallback voices to try
-        voices_to_try = [
-            voice,
-            "en-US-JennyNeural",
-            "en-US-AndrewNeural",
-            "en-US-GuyNeural",
-            "en-US-AriaNeural",
-            "en-GB-SoniaNeural",
-            "en-AU-NatashaNeural"
-        ]
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.api_key:
+            logger.warning("ElevenLabs API key not configured")
+            return False
         
-        # Remove duplicates while preserving order
-        seen = set()
-        voices_to_try = [v for v in voices_to_try if not (v in seen or seen.add(v))]
+        try:
+            url = f"{self.base_url}/text-to-speech/{self.voice_id}"
+            
+            headers = {
+                "xi-api-key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "text": text,
+                "model_id": self.model,
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75,
+                    "style": 0.0,
+                    "use_speaker_boost": True
+                }
+            }
+            
+            logger.info(f"Generating audio with ElevenLabs (voice: {self.voice_id})")
+            response = requests.post(url, json=data, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                # Save audio
+                with open(output_file, 'wb') as f:
+                    f.write(response.content)
+                
+                logger.info(f"ElevenLabs audio saved to {output_file}")
+                return True
+            else:
+                logger.error(f"ElevenLabs API error: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"ElevenLabs generation failed: {e}")
+            return False
+    
+    def get_available_voices(self) -> list:
+        """Get list of available voices from ElevenLabs."""
+        if not self.api_key:
+            return []
+        
+        try:
+            url = f"{self.base_url}/voices"
+            headers = {"xi-api-key": self.api_key}
+            
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                voices = response.json().get("voices", [])
+                return [(v["voice_id"], v["name"]) for v in voices]
+            else:
+                logger.error(f"Failed to fetch voices: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error fetching voices: {e}")
+            return []
+
+
+class AudioGenerator:
+    """
+    Enhanced audio generator with multiple TTS backends.
+    Priority: ElevenLabs > edge-tts > gTTS
+    """
+    
+    def __init__(self):
+        # Initialize all generators
+        self.elevenlabs = ElevenLabsGenerator()
+        
+        # edge-tts settings
+        self.edge_voice = "en-US-JennyNeural"
+        
+        # gTTS is imported on-demand
+    
+    def generate_audio(self, text: str, output_file: str, target_duration: int = 60) -> str:
+        """
+        Generate audio using best available TTS engine.
+        
+        Args:
+            text: Text to convert to speech
+            output_file: Path to save audio file
+            target_duration: Target duration in seconds (for padding if needed)
+            
+        Returns:
+            Path to generated audio file, or None if failed
+        """
+        logger.info(f"Generating audio for text ({len(text)} chars)")
+        
+        # Try ElevenLabs first (best quality)
+        if Config.ELEVENLABS_API_KEY:
+            logger.info("Attempting ElevenLabs TTS...")
+            if self.elevenlabs.generate_audio(text, output_file):
+                logger.info("✓ ElevenLabs audio generated successfully")
+                self._generate_timestamps_for_elevenlabs(text, output_file)
+                return output_file
+            else:
+                logger.warning("ElevenLabs failed, falling back to edge-tts")
+        
+        # Try edge-tts (good quality, free)
+        logger.info("Attempting edge-tts...")
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self._generate_with_edge_tts(text, output_file)
+                )
+                future.result(timeout=30)
+            
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                logger.info("✓ edge-tts audio generated successfully")
+                return output_file
+            else:
+                raise Exception("edge-tts produced empty file")
+                
+        except Exception as e:
+            logger.warning(f"edge-tts failed: {e}, falling back to gTTS")
+        
+        # Fallback to gTTS (reliable)
+        logger.info("Using gTTS fallback...")
+        try:
+            self._generate_with_gtts(text, output_file)
+            logger.info("✓ gTTS audio generated successfully")
+            return output_file
+        except Exception as e:
+            logger.error(f"All TTS engines failed: {e}")
+            return None
+    
+    async def _generate_with_edge_tts(self, text: str, output_file: str):
+        """
+        Generate audio with edge-tts.
+        Tries multiple voices if the primary one fails.
+        """
+        voices = [
+            "en-US-JennyNeural",      # Female, very natural
+            "en-US-ChristopherNeural", # Male, very natural
+            "en-US-EricNeural",       # Male, natural
+            "en-US-GuyNeural",        # Male
+            "en-US-AriaNeural"        # Female
+        ]
         
         last_error = None
         
-        for attempt_voice in voices_to_try:
+        for voice in voices:
             try:
-                logger.info(f"Attempting audio generation with voice: {attempt_voice}")
-                communicate = edge_tts.Communicate(text_to_use, attempt_voice)
+                logger.info(f"Trying edge-tts voice: {voice}")
+                communicate = edge_tts.Communicate(text, voice)
                 submaker = edge_tts.SubMaker()
                 
-                audio_chunks_count = 0
+                # Create a temporary file for this attempt
+                temp_file = output_file + ".tmp"
                 
-                with open(output_file, "wb") as file:
+                with open(temp_file, "wb") as f:
                     async for chunk in communicate.stream():
                         if chunk["type"] == "audio":
-                            file.write(chunk["data"])
-                            audio_chunks_count += 1
-                        elif chunk["type"] == "WordBoundary" or chunk["type"] == "SentenceBoundary":
-                            # Feed boundary events to submaker
+                            f.write(chunk["data"])
+                        elif chunk["type"] in ["WordBoundary", "SentenceBoundary"]:
                             submaker.feed(chunk)
-                            logger.debug(f"Fed {chunk['type']} to submaker")
-                        else:
-                            logger.debug(f"Ignored chunk type: {chunk['type']}")
                 
-                logger.info(f"Successfully generated audio with {audio_chunks_count} chunks using {attempt_voice}")
-                
-                # Verify file was created and has content
-                import os
-                if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
-                    raise Exception(f"Audio file is empty or not created")
-                
-                # Generate and save SRT
-                srt_content = submaker.get_srt()
-                srt_file = output_file.replace('.mp3', '.srt')
-                with open(srt_file, 'w', encoding='utf-8') as f:
-                    f.write(srt_content)
+                # If we got here, it worked!
+                # Move temp file to actual output
+                if os.path.exists(temp_file) and os.path.getsize(temp_file) > 0:
+                    os.replace(temp_file, output_file)
                     
-                logger.info(f"Saved subtitles to {srt_file}")
-                
-                # Also save as JSON for video editor to consume easily (parsing SRT here)
-                import re
-                timestamps = []
-                # Regex to parse SRT
-                # Look for: timestamp --> timestamp \n text
-                pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[.,]\d{3}) --> (\d{2}:\d{2}:\d{2}[.,]\d{3})\n(.*)')
-                
-                # Split by double newline to get blocks
-                lines = srt_content.split('\n\n')
-                for block in lines:
-                    match = pattern.search(block)
-                    if match:
-                        start_str, end_str, text = match.groups()
+                    # Save SRT and timestamps
+                    try:
+                        srt_content = submaker.get_srt()
+                        srt_file = output_file.replace('.mp3', '.srt')
+                        with open(srt_file, 'w', encoding='utf-8') as f:
+                            f.write(srt_content)
                         
-                        # Convert time string to seconds
-                        def parse_time(t_str):
-                            t_str = t_str.replace(',', '.')
-                            h, m, s = t_str.split(':')
-                            return int(h) * 3600 + int(m) * 60 + float(s)
-                        
-                        start = parse_time(start_str)
-                        end = parse_time(end_str)
-                        
-                        timestamps.append({
-                            "word": text.strip(), # It's actually a sentence/segment
-                            "start": start,
-                            "end": end
-                        })
-                
-                timestamps_file = output_file.replace('.mp3', '_timestamps.json')
-                with open(timestamps_file, 'w') as f:
-                    json.dump(timestamps, f, indent=2)
+                        # Parse SRT to JSON timestamps
+                        self._srt_to_timestamps(srt_file, output_file.replace('.mp3', '_timestamps.json'))
+                    except Exception as e:
+                        logger.warning(f"Failed to generate subtitles for {voice}: {e}, but audio is saved.")
+                        # Generate estimated timestamps as fallback
+                        self._generate_timestamps_for_elevenlabs(text, output_file)
                     
-                logger.info(f"Saved {len(timestamps)} segments to {timestamps_file}")
-                
-                # Success! Return
-                return
-                
+                    logger.info(f"✓ edge-tts successful with {voice}")
+                    return
+                else:
+                    raise Exception("Generated file was empty")
+                    
             except Exception as e:
+                logger.warning(f"Voice {voice} failed: {e}")
                 last_error = e
-                logger.warning(f"Voice {attempt_voice} failed: {e}")
-                # Try next voice
+                if os.path.exists(output_file + ".tmp"):
+                    os.remove(output_file + ".tmp")
                 continue
         
-        # If we get here, all voices failed
-        raise Exception(f"All voices failed. Last error: {last_error}")
-
-    def _generate_audio_with_gtts(self, text, output_file):
-        """
-        Fallback: Generate audio using gTTS (Google Text-to-Speech).
-        More reliable than edge-tts but doesn't provide word-level timestamps.
-        """
-        try:
-            from gtts import gTTS
-            import os
-            
-            logger.info("Using gTTS fallback for audio generation...")
-            
-            # Generate audio
-            tts = gTTS(text=text, lang='en', slow=False)
-            tts.save(output_file)
-            
-            logger.info(f"gTTS audio saved to {output_file}")
-            
-            # Generate approximate timestamps based on word count
-            # Average speaking rate: ~150 words per minute = 2.5 words per second
-            words = text.split()
-            total_words = len(words)
-            
-            # Get actual audio duration
-            import subprocess
-            probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output_file]
-            result = subprocess.run(probe_cmd, capture_output=True, text=True)
-            duration = float(json.loads(result.stdout)['format']['duration'])
-            
-            # Calculate time per word
-            time_per_word = duration / total_words if total_words > 0 else 0
-            
-            # Generate approximate timestamps
-            timestamps = []
-            current_time = 0
-            
-            for word in words:
-                word_duration = time_per_word
-                timestamps.append({
-                    "word": word,
-                    "start": current_time,
-                    "end": current_time + word_duration
-                })
-                current_time += word_duration
-            
-            # Save timestamps
-            timestamps_file = output_file.replace('.mp3', '_timestamps.json')
-            with open(timestamps_file, 'w') as f:
-                json.dump(timestamps, f, indent=2)
-                
-            logger.info(f"Generated {len(timestamps)} approximate timestamps")
-            
-            # Generate basic SRT
-            srt_content = ""
-            for i, ts in enumerate(timestamps, 1):
-                start_time = self._seconds_to_srt_time(ts['start'])
-                end_time = self._seconds_to_srt_time(ts['end'])
-                srt_content += f"{i}\n{start_time} --> {end_time}\n{ts['word']}\n\n"
-            
-            srt_file = output_file.replace('.mp3', '.srt')
-            with open(srt_file, 'w', encoding='utf-8') as f:
-                f.write(srt_content)
-                
-            logger.info(f"Generated SRT file: {srt_file}")
-            
-        except Exception as e:
-            logger.error(f"gTTS fallback failed: {e}")
-            raise
+        # If all voices failed
+        raise Exception(f"All edge-tts voices failed. Last error: {last_error}")
     
-    def _seconds_to_srt_time(self, seconds):
-        """Convert seconds to SRT time format (HH:MM:SS,mmm)"""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = int(seconds % 60)
-        millis = int((seconds % 1) * 1000)
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-    def generate_audio(self, text, output_file, target_duration=60):
+    def _generate_with_gtts(self, text: str, output_file: str):
+        """Generate audio with gTTS."""
+        from gtts import gTTS
+        import subprocess
+        
+        tts = gTTS(text=text, lang='en', slow=False)
+        tts.save(output_file)
+        
+        # Generate approximate timestamps
+        words = text.split()
+        
+        # Get audio duration
+        probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output_file]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        duration = float(json.loads(result.stdout)['format']['duration'])
+        
+        time_per_word = duration / len(words) if words else 0
+        
+        timestamps = []
+        current_time = 0
+        for word in words:
+            timestamps.append({
+                "word": word,
+                "start": current_time,
+                "end": current_time + time_per_word
+            })
+            current_time += time_per_word
+        
+        timestamps_file = output_file.replace('.mp3', '_timestamps.json')
+        with open(timestamps_file, 'w') as f:
+            json.dump(timestamps, f, indent=2)
+    
+    def _generate_timestamps_for_elevenlabs(self, text: str, audio_file: str):
         """
-        Synchronous wrapper for the async generation using a thread.
-        target_duration: Target duration in seconds (default 60 for Shorts)
+        Generate approximate timestamps for ElevenLabs audio.
+        ElevenLabs doesn't provide word-level timestamps, so we estimate.
         """
-        logger.info(f"Generating audio to {output_file}...")
+        import subprocess
+        
+        words = text.split()
+        
+        # Get audio duration
         try:
-            # Try edge-tts first
-            try:
-                # Run the async function in a new thread with its own event loop
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self._generate_audio_with_timestamps_async(text, output_file))
-                    future.result(timeout=30)  # 30 second timeout
-                
-                logger.info("Successfully generated audio with edge-tts")
-                
-            except Exception as edge_error:
-                logger.warning(f"edge-tts failed: {edge_error}")
-                logger.info("Falling back to gTTS...")
-                
-                # Fallback to gTTS
-                self._generate_audio_with_gtts(text, output_file)
+            probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', audio_file]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            duration = float(json.loads(result.stdout)['format']['duration'])
+        except:
+            # Estimate: ~2.5 words per second
+            duration = len(words) / 2.5
+        
+        time_per_word = duration / len(words) if words else 0
+        
+        timestamps = []
+        current_time = 0
+        for word in words:
+            timestamps.append({
+                "word": word,
+                "start": current_time,
+                "end": current_time + time_per_word
+            })
+            current_time += time_per_word
+        
+        timestamps_file = audio_file.replace('.mp3', '_timestamps.json')
+        with open(timestamps_file, 'w') as f:
+            json.dump(timestamps, f, indent=2)
+    
+    def _srt_to_timestamps(self, srt_file: str, json_file: str):
+        """Convert SRT file to JSON timestamps."""
+        import re
+        
+        with open(srt_file, 'r', encoding='utf-8') as f:
+            srt_content = f.read()
+        
+        pattern = re.compile(r'(\d{2}:\d{2}:\d{2}[.,]\d{3}) --> (\d{2}:\d{2}:\d{2}[.,]\d{3})\n(.*?)(?=\n\n|\Z)', re.DOTALL)
+        
+        timestamps = []
+        for match in pattern.finditer(srt_content):
+            start_str, end_str, text = match.groups()
             
-            # Check audio duration and extend if needed
-            import subprocess
-            import json
-            import os
+            def parse_time(t_str):
+                t_str = t_str.replace(',', '.')
+                h, m, s = t_str.split(':')
+                return int(h) * 3600 + int(m) * 60 + float(s)
             
-            # Get actual duration
-            probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output_file]
-            result = subprocess.run(probe_cmd, capture_output=True, text=True)
-            
-            try:
-                duration = float(json.loads(result.stdout)['format']['duration'])
-            except:
-                logger.warning("Could not determine audio duration, skipping adjustment")
-                return output_file
-            
-            logger.info(f"Generated audio duration: {duration}s (target: {target_duration}s)")
-            
-            # Always ensure audio is exactly target duration
-            if abs(duration - target_duration) > 0.5:  # If difference > 0.5s
-                logger.info(f"Adjusting audio from {duration}s to {target_duration}s")
-                temp_output = output_file.replace('.mp3', '_adjusted.mp3')
-                
-                if duration < target_duration:
-                    # Audio too short - loop it
-                    loops = int(target_duration / duration) + 1
-                    
-                    # Create concat file
-                    concat_file = output_file.replace('.mp3', '_concat.txt')
-                    with open(concat_file, 'w') as f:
-                        for _ in range(loops):
-                            f.write(f"file '{os.path.basename(output_file)}'\n")
-                    
-                    # Concatenate and trim to exact duration
-                    concat_cmd = [
-                        'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
-                        '-t', str(target_duration), '-c', 'copy', temp_output
-                    ]
-                    subprocess.run(concat_cmd, capture_output=True)
-                    os.remove(concat_file)
-                else:
-                    # Audio too long - trim it
-                    trim_cmd = [
-                        'ffmpeg', '-y', '-i', output_file,
-                        '-t', str(target_duration), '-c', 'copy', temp_output
-                    ]
-                    subprocess.run(trim_cmd, capture_output=True)
-                
-                # Replace original with adjusted
-                if os.path.exists(temp_output):
-                    os.replace(temp_output, output_file)
-                    logger.info(f"Audio adjusted to {target_duration}s")
-                    
-                    # NOTE: If we adjust audio, timestamps might become invalid for the looped parts.
-                    # For now, we assume the initial timestamps are valid for the first loop.
-                    # Ideally, we should replicate timestamps if we loop.
-            
-            
-            logger.info("Audio generation complete.")
-            return output_file
-        except Exception as e:
-            logger.error(f"Audio generation failed: {e}")
-            return None
+            timestamps.append({
+                "word": text.strip(),
+                "start": parse_time(start_str),
+                "end": parse_time(end_str)
+            })
+        
+        with open(json_file, 'w') as f:
+            json.dump(timestamps, f, indent=2)
+
 
 if __name__ == "__main__":
+    # Test audio generation
     gen = AudioGenerator()
-    gen.generate_audio("Hello, this is a test of the automated voice system.", "test_audio.mp3")
+    test_text = "Welcome to this amazing video about artificial intelligence. AI is transforming our world."
+    gen.generate_audio(test_text, "test_elevenlabs.mp3")

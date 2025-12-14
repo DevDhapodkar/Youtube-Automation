@@ -1,0 +1,857 @@
+index.ts
+ import type { TgpuRoot, TgpuUniform } from 'typegpu';
+import * as d from 'typegpu/data';
+import * as m from 'wgpu-matrix';
+
+const Camera = d.struct({
+  view: d.mat4x4f,
+  proj: d.mat4x4f,
+  viewInv: d.mat4x4f,
+  projInv: d.mat4x4f,
+});
+
+function halton(index: number, base: number) {
+  let result = 0;
+  let f = 1 / base;
+  let i = index;
+  while (i > 0) {
+    result += f * (i % base);
+    i = Math.floor(i / base);
+    f = f / base;
+  }
+  return result;
+}
+
+function* haltonSequence(base: number) {
+  let index = 1;
+  while (true) {
+    yield halton(index, base);
+    index++;
+  }
+}
+
+export class CameraController {
+  #uniform: TgpuUniform<typeof Camera>;
+  #view: d.m4x4f;
+  #proj: d.m4x4f;
+  #viewInv: d.m4x4f;
+  #projInv: d.m4x4f;
+  #baseProj: d.m4x4f;
+  #baseProjInv: d.m4x4f;
+  #haltonX: Generator<number>;
+  #haltonY: Generator<number>;
+  #width: number;
+  #height: number;
+
+  constructor(
+    root: TgpuRoot,
+    position: d.v3f,
+    target: d.v3f,
+    up: d.v3f,
+    fov: number,
+    width: number,
+    height: number,
+    near = 0.1,
+    far = 10,
+  ) {
+    this.#width = width;
+    this.#height = height;
+
+    this.#view = m.mat4.lookAt(position, target, up, d.mat4x4f());
+    this.#baseProj = m.mat4.perspective(
+      fov,
+      width / height,
+      near,
+      far,
+      d.mat4x4f(),
+    );
+    this.#proj = this.#baseProj;
+
+    this.#viewInv = m.mat4.invert(this.#view, d.mat4x4f());
+    this.#baseProjInv = m.mat4.invert(this.#baseProj, d.mat4x4f());
+    this.#projInv = this.#baseProjInv;
+
+    this.#uniform = root.createUniform(Camera, {
+      view: this.#view,
+      proj: this.#proj,
+      viewInv: this.#viewInv,
+      projInv: this.#projInv,
+    });
+
+    this.#haltonX = haltonSequence(2);
+    this.#haltonY = haltonSequence(3);
+  }
+
+  jitter() {
+    const [jx, jy] = [
+      this.#haltonX.next().value,
+      this.#haltonY.next().value,
+    ] as [
+      number,
+      number,
+    ];
+
+    const jitterX = ((jx - 0.5) * 2.0) / this.#width;
+    const jitterY = ((jy - 0.5) * 2.0) / this.#height;
+
+    const jitterMatrix = m.mat4.identity(d.mat4x4f());
+    jitterMatrix[12] = jitterX; // x translation in NDC
+    jitterMatrix[13] = jitterY; // y translation in NDC
+
+    const jitteredProj = m.mat4.mul(jitterMatrix, this.#baseProj, d.mat4x4f());
+    const jitteredProjInv = m.mat4.invert(jitteredProj, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      proj: jitteredProj,
+      projInv: jitteredProjInv,
+    });
+  }
+
+  updateView(position: d.v3f, target: d.v3f, up: d.v3f) {
+    this.#view = m.mat4.lookAt(position, target, up, d.mat4x4f());
+    this.#viewInv = m.mat4.invert(this.#view, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      view: this.#view,
+      viewInv: this.#viewInv,
+    });
+  }
+
+  updateProjection(
+    fov: number,
+    width: number,
+    height: number,
+    near = 0.1,
+    far = 100,
+  ) {
+    this.#width = width;
+    this.#height = height;
+
+    this.#baseProj = m.mat4.perspective(
+      fov,
+      width / height,
+      near,
+      far,
+      d.mat4x4f(),
+    );
+    this.#baseProjInv = m.mat4.invert(this.#baseProj, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      proj: this.#baseProj,
+      projInv: this.#baseProjInv,
+    });
+  }
+
+  get cameraUniform() {
+    return this.#uniform;
+  }
+}
+camera.ts 
+import type { TgpuRoot, TgpuUniform } from 'typegpu';
+import * as d from 'typegpu/data';
+import * as m from 'wgpu-matrix';
+
+const Camera = d.struct({
+  view: d.mat4x4f,
+  proj: d.mat4x4f,
+  viewInv: d.mat4x4f,
+  projInv: d.mat4x4f,
+});
+
+function halton(index: number, base: number) {
+  let result = 0;
+  let f = 1 / base;
+  let i = index;
+  while (i > 0) {
+    result += f * (i % base);
+    i = Math.floor(i / base);
+    f = f / base;
+  }
+  return result;
+}
+
+function* haltonSequence(base: number) {
+  let index = 1;
+  while (true) {
+    yield halton(index, base);
+    index++;
+  }
+}
+
+export class CameraController {
+  #uniform: TgpuUniform<typeof Camera>;
+  #view: d.m4x4f;
+  #proj: d.m4x4f;
+  #viewInv: d.m4x4f;
+  #projInv: d.m4x4f;
+  #baseProj: d.m4x4f;
+  #baseProjInv: d.m4x4f;
+  #haltonX: Generator<number>;
+  #haltonY: Generator<number>;
+  #width: number;
+  #height: number;
+
+  constructor(
+    root: TgpuRoot,
+    position: d.v3f,
+    target: d.v3f,
+    up: d.v3f,
+    fov: number,
+    width: number,
+    height: number,
+    near = 0.1,
+    far = 10,
+  ) {
+    this.#width = width;
+    this.#height = height;
+
+    this.#view = m.mat4.lookAt(position, target, up, d.mat4x4f());
+    this.#baseProj = m.mat4.perspective(
+      fov,
+      width / height,
+      near,
+      far,
+      d.mat4x4f(),
+    );
+    this.#proj = this.#baseProj;
+
+    this.#viewInv = m.mat4.invert(this.#view, d.mat4x4f());
+    this.#baseProjInv = m.mat4.invert(this.#baseProj, d.mat4x4f());
+    this.#projInv = this.#baseProjInv;
+
+    this.#uniform = root.createUniform(Camera, {
+      view: this.#view,
+      proj: this.#proj,
+      viewInv: this.#viewInv,
+      projInv: this.#projInv,
+    });
+
+    this.#haltonX = haltonSequence(2);
+    this.#haltonY = haltonSequence(3);
+  }
+
+  jitter() {
+    const [jx, jy] = [
+      this.#haltonX.next().value,
+      this.#haltonY.next().value,
+    ] as [
+      number,
+      number,
+    ];
+
+    const jitterX = ((jx - 0.5) * 2.0) / this.#width;
+    const jitterY = ((jy - 0.5) * 2.0) / this.#height;
+
+    const jitterMatrix = m.mat4.identity(d.mat4x4f());
+    jitterMatrix[12] = jitterX; // x translation in NDC
+    jitterMatrix[13] = jitterY; // y translation in NDC
+
+    const jitteredProj = m.mat4.mul(jitterMatrix, this.#baseProj, d.mat4x4f());
+    const jitteredProjInv = m.mat4.invert(jitteredProj, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      proj: jitteredProj,
+      projInv: jitteredProjInv,
+    });
+  }
+
+  updateView(position: d.v3f, target: d.v3f, up: d.v3f) {
+    this.#view = m.mat4.lookAt(position, target, up, d.mat4x4f());
+    this.#viewInv = m.mat4.invert(this.#view, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      view: this.#view,
+      viewInv: this.#viewInv,
+    });
+  }
+
+  updateProjection(
+    fov: number,
+    width: number,
+    height: number,
+    near = 0.1,
+    far = 100,
+  ) {
+    this.#width = width;
+    this.#height = height;
+
+    this.#baseProj = m.mat4.perspective(
+      fov,
+      width / height,
+      near,
+      far,
+      d.mat4x4f(),
+    );
+    this.#baseProjInv = m.mat4.invert(this.#baseProj, d.mat4x4f());
+
+    this.#uniform.writePartial({
+      proj: this.#baseProj,
+      projInv: this.#baseProjInv,
+    });
+  }
+
+  get cameraUniform() {
+    return this.#uniform;
+  }
+}
+constants.ts
+import * as d from 'typegpu/data';
+import type { SpringProperties } from './spring.ts';
+
+// Rendering constants
+export const MAX_STEPS = 64;
+export const MAX_DIST = 10;
+export const SURF_DIST = 0.001;
+
+// Ground material constants
+export const LIGHT_GROUND_ALBEDO = d.vec3f(1);
+export const DARK_GROUND_ALBEDO = d.vec3f(0.2);
+
+// Lighting constants
+export const AMBIENT_COLOR = d.vec3f(0.6);
+export const AMBIENT_INTENSITY = 0.6;
+export const SPECULAR_POWER = 10;
+export const SPECULAR_INTENSITY = 0.6;
+
+// Jelly material constants
+export const JELLY_IOR = 1.42;
+export const JELLY_SCATTER_STRENGTH = 3;
+
+// Ambient occlusion constants
+export const AO_STEPS = 3;
+export const AO_RADIUS = 0.1;
+export const AO_INTENSITY = 0.5;
+export const AO_BIAS = SURF_DIST * 5;
+
+// Jelly constants
+export const JELLY_HALFSIZE = d.vec3f(0.35, 0.3, 0.3);
+export const SWITCH_RAIL_LENGTH = 0.4;
+export const SWITCH_ACCELERATION = 100;
+
+// Spring dynamics constants
+export const squashXProperties: SpringProperties = {
+  mass: 1,
+  stiffness: 1000,
+  damping: 10,
+};
+export const squashZProperties: SpringProperties = {
+  mass: 1,
+  stiffness: 900,
+  damping: 12,
+};
+export const wiggleXProperties: SpringProperties = {
+  mass: 1,
+  stiffness: 1000,
+  damping: 20,
+};
+dataTypes.ts
+import tgpu from 'typegpu';
+import * as d from 'typegpu/data';
+
+export const DirectionalLight = d.struct({
+  direction: d.vec3f,
+  color: d.vec3f,
+});
+
+export const ObjectType = {
+  SLIDER: 1,
+  BACKGROUND: 2,
+} as const;
+
+export const HitInfo = d.struct({
+  distance: d.f32,
+  objectType: d.i32,
+});
+
+export const BoxIntersection = d.struct({
+  hit: d.bool,
+  tMin: d.f32,
+  tMax: d.f32,
+});
+
+export const Ray = d.struct({
+  origin: d.vec3f,
+  direction: d.vec3f,
+});
+
+export type BoundingBox = d.Infer<typeof BoundingBox>;
+export const BoundingBox = d.struct({
+  min: d.vec3f,
+  max: d.vec3f,
+});
+
+export const SwitchState = d.struct({
+  progress: d.f32,
+  squashX: d.f32,
+  squashZ: d.f32,
+  wiggleX: d.f32,
+});
+
+export const rayMarchLayout = tgpu.bindGroupLayout({
+  backgroundTexture: { texture: d.texture2d(d.f32) },
+});
+
+export const taaResolveLayout = tgpu.bindGroupLayout({
+  currentTexture: {
+    texture: d.texture2d(),
+  },
+  historyTexture: {
+    texture: d.texture2d(),
+  },
+  outputTexture: {
+    storageTexture: d.textureStorage2d('rgba8unorm', 'write-only'),
+  },
+});
+
+export const sampleLayout = tgpu.bindGroupLayout({
+  currentTexture: {
+    texture: d.texture2d(),
+  },
+});
+spring.ts
+export type SpringProperties = {
+  mass: number;
+  stiffness: number;
+  damping: number;
+};
+
+export class Spring {
+  value: number;
+  target: number;
+  properties: SpringProperties;
+  velocity: number;
+
+  constructor(properties: SpringProperties) {
+    this.target = 0;
+    this.value = this.target;
+    this.properties = { ...properties };
+    this.velocity = 0;
+  }
+
+  update(dt: number) {
+    const F_spring = -this.properties.stiffness * (this.value - this.target);
+    const F_damp = -this.properties.damping * this.velocity;
+    const a = (F_spring + F_damp) / this.properties.mass;
+    this.velocity = this.velocity + a * dt;
+    this.value = this.value + this.velocity * dt;
+  }
+}
+switch.ts
+import type { TgpuRoot, TgpuUniform } from 'typegpu';
+import * as std from 'typegpu/std';
+import {
+  squashXProperties,
+  squashZProperties,
+  SWITCH_ACCELERATION,
+  wiggleXProperties,
+} from './constants.ts';
+import { SwitchState } from './dataTypes.ts';
+import { Spring } from './spring.ts';
+
+export class SwitchBehavior {
+  #root: TgpuRoot;
+
+  stateUniform: TgpuUniform<typeof SwitchState>;
+
+  // State
+  toggled = false;
+  pressed = false;
+
+  // Audio system
+  #audioContext: AudioContext;
+  #backgroundGainNode: GainNode;
+  #backgroundSource: AudioBufferSourceNode | undefined;
+  #switchOnBuffer: AudioBuffer | undefined;
+  #switchOffBuffer: AudioBuffer | undefined;
+  #squelchBuffers: AudioBuffer[] | undefined;
+
+  // Derived physical state
+  #progress: number;
+  #velocity: number;
+  #squashXSpring: Spring;
+  #squashZSpring: Spring;
+  #wiggleXSpring: Spring;
+
+  constructor(root: TgpuRoot) {
+    this.#root = root;
+
+    this.#progress = 0;
+    this.#velocity = 0;
+    this.#squashXSpring = new Spring(squashXProperties);
+    this.#squashZSpring = new Spring(squashZProperties);
+    this.#wiggleXSpring = new Spring(wiggleXProperties);
+
+    this.stateUniform = this.#root.createUniform(SwitchState);
+
+    // Initialize audio system
+    this.#audioContext = new AudioContext();
+    this.#backgroundGainNode = this.#audioContext.createGain();
+    this.#backgroundGainNode.connect(this.#audioContext.destination);
+    this.#backgroundGainNode.gain.value = 0;
+  }
+
+  async init() {
+    const [backgroundResponse, switchOnResponse, switchOffResponse] =
+      await Promise.all([
+        fetch('/TypeGPU/assets/jelly-switch/drag-noise.ogg'),
+        fetch('/TypeGPU/assets/jelly-switch/switch-on.ogg'),
+        fetch('/TypeGPU/assets/jelly-switch/switch-off.ogg'),
+      ]);
+
+    this.#squelchBuffers = await Promise.all(
+      Array.from(
+        { length: 6 },
+        (_, idx) =>
+          fetch(`/TypeGPU/assets/jelly-switch/squelch${idx + 1}.wav`)
+            .then((res) => res.arrayBuffer())
+            .then((buffer) => this.#audioContext.decodeAudioData(buffer)),
+      ),
+    );
+
+    const [backgroundArrayBuffer, switchOnArrayBuffer, switchOffArrayBuffer] =
+      await Promise.all([
+        backgroundResponse.arrayBuffer(),
+        switchOnResponse.arrayBuffer(),
+        switchOffResponse.arrayBuffer(),
+      ]);
+
+    const [backgroundBuffer, switchOnBuffer, switchOffBuffer] = await Promise
+      .all([
+        this.#audioContext.decodeAudioData(backgroundArrayBuffer),
+        this.#audioContext.decodeAudioData(switchOnArrayBuffer),
+        this.#audioContext.decodeAudioData(switchOffArrayBuffer),
+      ]);
+
+    this.#switchOnBuffer = switchOnBuffer;
+    this.#switchOffBuffer = switchOffBuffer;
+
+    const source = this.#audioContext.createBufferSource();
+    source.buffer = backgroundBuffer;
+    source.loop = true;
+    source.connect(this.#backgroundGainNode);
+    source.start();
+    this.#backgroundSource = source;
+  }
+
+  update(dt: number) {
+    if (dt <= 0) return;
+
+    let acc = 0;
+    if (this.toggled && this.#progress < 1) {
+      acc = SWITCH_ACCELERATION;
+    }
+    if (!this.toggled && this.#progress > 0) {
+      acc = -SWITCH_ACCELERATION;
+    }
+
+    // Anticipating movement
+    if (this.pressed) {
+      this.#squashXSpring.velocity = -2;
+      this.#squashZSpring.velocity = 1;
+      this.#wiggleXSpring.velocity = 1 * Math.sign(this.#progress - 0.5);
+    }
+
+    this.#velocity = this.#velocity + acc * dt;
+    if (this.#progress > 0 && this.#progress < 1) {
+      this.#wiggleXSpring.velocity = this.#velocity;
+    }
+
+    this.#progress = this.#progress + this.#velocity * dt;
+    // Overshoot
+    if (this.#progress > 1) {
+      this.#progress = 1;
+      // Converting leftover velocity to compression
+      this.#velocity = 0;
+      this.#squashXSpring.velocity = -5;
+      this.#squashZSpring.velocity = 5;
+      this.#wiggleXSpring.velocity = -10;
+      this.playSwitchOn();
+    }
+    if (this.#progress < 0) {
+      this.#progress = 0;
+      // Converting leftover velocity to compression
+      this.#velocity = 0;
+      this.#squashXSpring.velocity = -5;
+      this.#squashZSpring.velocity = 5;
+      this.#wiggleXSpring.velocity = 10;
+      this.playSwitchOff();
+    }
+    this.#progress = std.saturate(this.#progress);
+
+    // Spring dynamics
+    this.#squashXSpring.update(dt);
+    this.#squashZSpring.update(dt);
+    this.#wiggleXSpring.update(dt);
+
+    this.#backgroundGainNode.gain.value = std.saturate(
+      std.abs(this.#velocity * 0.1),
+    ) * 5;
+    this.#backgroundSource?.playbackRate.setTargetAtTime(
+      std.abs(this.#velocity) * 0.02 + 0.8,
+      0,
+      0.02,
+    );
+    this.#updateGPUBuffer();
+  }
+
+  #updateGPUBuffer() {
+    this.stateUniform.write({
+      progress: this.#progress,
+      squashX: this.#squashXSpring.value,
+      squashZ: this.#squashZSpring.value,
+      wiggleX: this.#wiggleXSpring.value,
+    });
+  }
+
+  playSwitchOn() {
+    if (!this.#switchOnBuffer) return;
+    const source = this.#audioContext.createBufferSource();
+    source.buffer = this.#switchOnBuffer;
+    source.connect(this.#audioContext.destination);
+    source.start();
+    this.playSquelch();
+  }
+
+  playSwitchOff() {
+    if (!this.#switchOffBuffer) return;
+    const source = this.#audioContext.createBufferSource();
+    source.buffer = this.#switchOffBuffer;
+    source.connect(this.#audioContext.destination);
+    source.start();
+    this.playSquelch();
+  }
+
+  playSquelch() {
+    const buffer = this.#squelchBuffers
+      ? this.#squelchBuffers[
+        Math.floor(Math.random() * (this.#squelchBuffers.length))
+      ]
+      : undefined;
+
+    if (!buffer) return;
+    const source = this.#audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = 1 + Math.random() * 0.5;
+    const gainNode = this.#audioContext.createGain();
+    gainNode.gain.value = 0.1;
+    source.connect(gainNode);
+    gainNode.connect(this.#audioContext.destination);
+    source.start();
+  }
+}
+taa.ts
+import tgpu from 'typegpu';
+import * as d from 'typegpu/data';
+import * as std from 'typegpu/std';
+import type { TgpuComputePipeline, TgpuRoot, TgpuTextureView } from 'typegpu';
+import { taaResolveLayout } from './dataTypes.ts';
+
+export const taaResolveFn = tgpu['~unstable'].computeFn({
+  workgroupSize: [16, 16],
+  in: {
+    gid: d.builtin.globalInvocationId,
+  },
+})(({ gid }) => {
+  const currentColor = std.textureLoad(
+    taaResolveLayout.$.currentTexture,
+    d.vec2u(gid.xy),
+    0,
+  );
+
+  const historyColor = std.textureLoad(
+    taaResolveLayout.$.historyTexture,
+    d.vec2u(gid.xy),
+    0,
+  );
+
+  let minColor = d.vec3f(9999.0);
+  let maxColor = d.vec3f(-9999.0);
+
+  const dimensions = std.textureDimensions(taaResolveLayout.$.currentTexture);
+
+  for (let x = -1; x <= 1; x++) {
+    for (let y = -1; y <= 1; y++) {
+      const sampleCoord = d.vec2i(gid.xy).add(d.vec2i(x, y));
+      const clampedCoord = std.clamp(
+        sampleCoord,
+        d.vec2i(0, 0),
+        d.vec2i(dimensions.xy).sub(d.vec2i(1)),
+      );
+
+      const neighborColor = std.textureLoad(
+        taaResolveLayout.$.currentTexture,
+        clampedCoord,
+        0,
+      );
+
+      minColor = std.min(minColor, neighborColor.xyz);
+      maxColor = std.max(maxColor, neighborColor.xyz);
+    }
+  }
+
+  const historyColorClamped = std.clamp(historyColor.xyz, minColor, maxColor);
+
+  const uv = d.vec2f(gid.xy).div(d.vec2f(dimensions.xy));
+
+  const blendFactor = d.f32(0.9);
+
+  const resolvedColor = d.vec4f(
+    std.mix(currentColor.xyz, historyColorClamped, blendFactor),
+    1.0,
+  );
+
+  std.textureStore(
+    taaResolveLayout.$.outputTexture,
+    d.vec2u(gid.x, gid.y),
+    resolvedColor,
+  );
+});
+
+export function createTaaTextures(
+  root: TgpuRoot,
+  width: number,
+  height: number,
+) {
+  return [0, 1].map(() => {
+    const texture = root['~unstable'].createTexture({
+      size: [width, height],
+      format: 'rgba8unorm',
+    }).$usage('storage', 'sampled');
+
+    return {
+      write: texture.createView(d.textureStorage2d('rgba8unorm')),
+      sampled: texture.createView(),
+    };
+  });
+}
+
+export class TAAResolver {
+  #pipeline: TgpuComputePipeline;
+  #textures: ReturnType<typeof createTaaTextures>;
+  #root: TgpuRoot;
+  #width: number;
+  #height: number;
+
+  constructor(root: TgpuRoot, width: number, height: number) {
+    this.#root = root;
+    this.#width = width;
+    this.#height = height;
+
+    this.#pipeline = root['~unstable']
+      .withCompute(taaResolveFn)
+      .createPipeline();
+
+    this.#textures = createTaaTextures(root, width, height);
+  }
+
+  resolve(
+    currentTexture: TgpuTextureView<d.WgslTexture2d<d.F32>>,
+    frameCount: number,
+    currentFrame: number,
+  ) {
+    const previousFrame = 1 - currentFrame;
+
+    this.#pipeline.with(
+      this.#root.createBindGroup(taaResolveLayout, {
+        currentTexture,
+        historyTexture: frameCount === 1
+          ? currentTexture
+          : this.#textures[previousFrame].sampled,
+        outputTexture: this.#textures[currentFrame].write,
+      }),
+    ).dispatchWorkgroups(
+      Math.ceil(this.#width / 16),
+      Math.ceil(this.#height / 16),
+    );
+
+    return this.#textures[currentFrame].sampled;
+  }
+
+  resize(width: number, height: number) {
+    this.#width = width;
+    this.#height = height;
+    this.#textures = createTaaTextures(this.#root, width, height);
+  }
+
+  getResolvedTexture(frame: number) {
+    return this.#textures[frame].sampled;
+  }
+}
+utils.ts
+import type { TgpuRoot } from 'typegpu';
+import * as d from 'typegpu/data';
+import * as std from 'typegpu/std';
+import { type BoundingBox, BoxIntersection } from './dataTypes.ts';
+
+export const fresnelSchlick = (
+  cosTheta: number,
+  ior1: number,
+  ior2: number,
+) => {
+  'use gpu';
+  const r0 = std.pow((ior1 - ior2) / (ior1 + ior2), 2.0);
+  return r0 + (1.0 - r0) * std.pow(1.0 - cosTheta, 5.0);
+};
+
+export const beerLambert = (sigma: d.v3f, dist: number) => {
+  'use gpu';
+  return std.exp(std.mul(sigma, -dist));
+};
+
+export const intersectBox = (
+  rayOrigin: d.v3f,
+  rayDirection: d.v3f,
+  box: BoundingBox,
+) => {
+  'use gpu';
+  const invDir = d.vec3f(1.0).div(rayDirection);
+
+  const t1 = std.sub(box.min, rayOrigin).mul(invDir);
+  const t2 = std.sub(box.max, rayOrigin).mul(invDir);
+
+  const tMinVec = std.min(t1, t2);
+  const tMaxVec = std.max(t1, t2);
+
+  const tMin = std.max(std.max(tMinVec.x, tMinVec.y), tMinVec.z);
+  const tMax = std.min(std.min(tMaxVec.x, tMaxVec.y), tMaxVec.z);
+
+  const result = BoxIntersection();
+  result.hit = tMax >= tMin && tMax >= 0.0;
+  result.tMin = tMin;
+  result.tMax = tMax;
+
+  return result;
+};
+
+export function createTextures(root: TgpuRoot, width: number, height: number) {
+  return [0, 1].map(() => {
+    const texture = root['~unstable']
+      .createTexture({
+        size: [width, height],
+        format: 'rgba8unorm',
+      })
+      .$usage('storage', 'sampled', 'render');
+
+    return {
+      write: texture.createView(d.textureStorage2d('rgba8unorm')),
+      sampled: texture.createView(),
+    };
+  });
+}
+
+export function createBackgroundTexture(
+  root: TgpuRoot,
+  width: number,
+  height: number,
+) {
+  const texture = root['~unstable']
+    .createTexture({
+      size: [width, height],
+      format: 'rgba16float',
+    })
+    .$usage('sampled', 'render');
+
+  return {
+    sampled: texture.createView(),
+  };
+}

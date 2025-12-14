@@ -5,10 +5,8 @@ from config.settings import Config
 import os
 from src.trends.trend_analyzer import TrendAnalyzer
 from src.content.script_generator import ScriptGenerator
-from src.content.audio_generator import AudioGenerator
-from src.content.visual_generator import VisualGenerator
 from src.content.thumbnail_generator import ThumbnailGenerator
-from src.video.video_editor import VideoEditor
+from src.video.scene_based_orchestrator import SceneBasedVideoOrchestrator
 from src.upload.youtube_uploader import YouTubeUploader
 
 # Configure logging
@@ -24,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 def job_cycle():
     """
-    Main execution cycle:
+    Main execution cycle with scene-based video generation:
     1. Analyze Trends
-    2. Generate Content
-    3. Produce Video
+    2. Generate Script
+    3. Create Video (Scene-Based)
     4. Upload
     """
     logger.info("Starting automated job cycle...")
@@ -36,10 +34,8 @@ def job_cycle():
         # Initialize Modules
         trend_analyzer = TrendAnalyzer()
         script_gen = ScriptGenerator()
-        audio_gen = AudioGenerator()
-        visual_gen = VisualGenerator()
+        orchestrator = SceneBasedVideoOrchestrator()
         thumb_gen = ThumbnailGenerator()
-        video_editor = VideoEditor()
         uploader = YouTubeUploader()
 
         # Step 1: Trends
@@ -49,24 +45,22 @@ def job_cycle():
             logger.error("No topic selected. Aborting cycle.")
             return
 
-        # Step 2: Content
-        logger.info(f"Step 2: Generating content for '{topic}'...")
+        # Step 2: Generate Script
+        logger.info(f"Step 2: Generating script for '{topic}'...")
         script = script_gen.generate_script(topic, duration_type="short")
         
-        audio_path = os.path.join(Config.ASSETS_DIR, "temp_audio.mp3")
-        audio_gen.generate_audio(script, audio_path)
-        
-        # Get visuals based on keywords from topic
-        # Simple keyword extraction (first 2 words)
-        query = " ".join(topic.split()[:2])
-        # Use mixed visuals (AI + Stock)
-        visual_paths = visual_gen.get_mixed_visuals(query, script, niche="general", duration=60)
-        
-        # Step 3: Production
-        logger.info("Step 3: Producing video...")
+        # Step 3: Create Video using Scene-Based System
+        logger.info("Step 3: Creating video with scene-based system...")
         video_path = os.path.join(Config.ASSETS_DIR, "final_video.mp4")
-        final_video = video_editor.create_short(audio_path, visual_paths, script, video_path)
         
+        final_video = orchestrator.create_video(
+            script=script,
+            output_path=video_path,
+            target_duration=60,  # 60 seconds for YouTube Shorts
+            niche="general"
+        )
+        
+        # Generate thumbnail
         thumb_path = os.path.join(Config.ASSETS_DIR, "thumbnail.jpg")
         thumb_gen.create_thumbnail(topic, output_path=thumb_path)
         
