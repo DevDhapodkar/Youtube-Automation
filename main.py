@@ -4,8 +4,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from config.settings import Config
 import os
 from src.trends.trend_analyzer import TrendAnalyzer
-from src.content.script_generator import ScriptGenerator
-from src.content.thumbnail_generator import ThumbnailGenerator
+from src.content.unified_generator import UnifiedContentGenerator
 from src.video.scene_based_orchestrator import SceneBasedVideoOrchestrator
 from src.upload.youtube_uploader import YouTubeUploader
 
@@ -33,21 +32,29 @@ def job_cycle():
     try:
         # Initialize Modules
         trend_analyzer = TrendAnalyzer()
-        script_gen = ScriptGenerator()
+        unified_gen = UnifiedContentGenerator()
         orchestrator = SceneBasedVideoOrchestrator()
-        thumb_gen = ThumbnailGenerator()
         uploader = YouTubeUploader()
 
-        # Step 1: Trends
-        logger.info("Step 1: Analyzing trends...")
+        # Step 1 & 2: Content Generation (Optimized)
+        logger.info("Step 1 & 2: Generating content...")
         topic = trend_analyzer.select_topic()
         if not topic:
             logger.error("No topic selected. Aborting cycle.")
             return
 
-        # Step 2: Generate Script
-        logger.info(f"Step 2: Generating script for '{topic}'...")
-        script = script_gen.generate_script(topic, duration_type="short")
+        content_data = unified_gen.generate_content_from_topic(topic, niche="general")
+        if not content_data:
+            logger.error("Content generation failed. Aborting cycle.")
+            return
+
+        topic = content_data.get("topic")
+        viral_title = content_data.get("title")
+        script = content_data.get("script")
+        pre_generated_scenes = content_data.get("scenes")
+        
+        logger.info(f"Generated Topic: {topic}")
+        logger.info(f"Generated Title: {viral_title}")
         
         # Step 3: Create Video using Scene-Based System
         logger.info("Step 3: Creating video with scene-based system...")
@@ -57,12 +64,9 @@ def job_cycle():
             script=script,
             output_path=video_path,
             target_duration=60,  # 60 seconds for YouTube Shorts
-            niche="general"
+            niche="general",
+            pre_generated_scenes=pre_generated_scenes
         )
-        
-        # Generate thumbnail
-        thumb_path = os.path.join(Config.ASSETS_DIR, "thumbnail.jpg")
-        thumb_gen.create_thumbnail(topic, output_path=thumb_path)
         
         # Step 4: Upload
         if final_video and os.path.exists(final_video):
@@ -71,7 +75,7 @@ def job_cycle():
             description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts"
             tags = ["shorts", "ai", "facts", topic.split()[0]]
             
-            uploader.upload_video(final_video, topic, description, tags)
+            uploader.upload_video(final_video, viral_title, description, tags)
         else:
             logger.error("Video generation failed, skipping upload.")
         

@@ -17,8 +17,55 @@ class MochiGenerator:
         self.enabled = True
         try:
             # Genmo Mochi 1 - Free, unlimited
-            self.client = Client("genmo/mochi-1-preview")
-            logger.info("Mochi generator initialized")
+            hf_token = os.getenv("HUGGINGFACE_API_KEY")
+            # List of spaces to try (Best to Backup)
+            spaces_to_try = [
+                "DeepRat/LTX-Video-ZeroGPU-Optimized",
+                "genmo/mochi-1-preview",
+                "https://genmo-mochi-1-preview.hf.space",
+                "KingNish/mochi-1-preview",
+                "https://kingnish-mochi-1-preview.hf.space",
+                "multimodalart/mochi-1-preview",
+                "cerspense/zeroscope_v2_576w",
+                "damo-vilab/text-to-video-ms-1.7b",
+                "ali-vilab/modelscope-damo-text-to-video-synthesis"
+            ]
+            
+            self.client = None
+            last_error = None
+            
+            if hf_token:
+                logger.info("Found Hugging Face token")
+            else:
+                logger.warning("No Hugging Face token found")
+
+            for space in spaces_to_try:
+                # Try with token first (if available)
+                if hf_token:
+                    try:
+                        logger.info(f"Attempting to connect to {space} (with token)...")
+                        self.client = Client(space, token=hf_token)
+                        logger.info(f"✓ Connected to {space}")
+                        self.model_name = space
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to connect to {space} with token: {e}")
+                
+                # Try without token (public access)
+                try:
+                    logger.info(f"Attempting to connect to {space} (without token)...")
+                    self.client = Client(space)
+                    logger.info(f"✓ Connected to {space}")
+                    self.model_name = space
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to connect to {space} without token: {e}")
+                    last_error = e
+            
+            if not self.client:
+                raise last_error or Exception("All AI video spaces failed")
+                
+            logger.info(f"AI Video Generator initialized with {self.model_name}")
         except Exception as e:
             logger.warning(f"Mochi initialization failed: {e}. AI video generation disabled.")
             self.enabled = False
@@ -34,48 +81,94 @@ class MochiGenerator:
             
         Returns:
             Path to generated video, or None if failed
+        Generate video from prompt using the initialized model.
         """
-        if not self.enabled:
-            logger.warning("Mochi generator is disabled")
+        if not self.enabled or not self.client:
             return None
+            
+        logger.info(f"Generating AI video with {self.model_name} for: {prompt}")
         
         try:
-            logger.info(f"Generating AI video with Mochi: '{prompt[:50]}...'")
-            
-            # Enhance prompt for better results
-            enhanced_prompt = self._enhance_prompt(prompt)
-            
-            # Generate video
-            result = self.client.predict(
-                prompt=enhanced_prompt,
-                negative_prompt="blurry, low quality, distorted, watermark, text",
-                num_inference_steps=50,
-                guidance_scale=7.5,
-                api_name="/generate"
-            )
-            
-            # result is typically a file path or URL
-            if isinstance(result, str):
-                # Download if it's a URL
-                if result.startswith('http'):
-                    self._download_file(result, output_path)
-                else:
-                    # It's a local file path
-                    import shutil
-                    shutil.copy(result, output_path)
+            # Mochi Logic
+            if "mochi" in self.model_name.lower():
+                result = self.client.predict(
+                    prompt,	# str  in 'Prompt' Textbox component
+                    "",	# str  in 'Negative prompt' Textbox component
+                    0,	# int | float (numeric value between 0 and 2147483647) in 'Seed' Slider component
+                    True,	# bool  in 'Randomize seed' Checkbox component
+                    1920,	# int | float (numeric value between 1024 and 1920) in 'Width' Slider component
+                    1080,	# int | float (numeric value between 1024 and 1920) in 'Height' Slider component
+                    30,	# int | float (numeric value between 10 and 50) in 'Number of frames' Slider component
+                    6,	# int | float (numeric value between 1 and 20) in 'Guidance scale' Slider component
+                    api_name="/predict"
+                )
+                # Result is usually a path to mp4
+                video_file = result
                 
-                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                    logger.info(f"✓ Mochi video generated: {output_path}")
-                    return output_path
+            # LTX Logic
+            elif "ltx" in self.model_name.lower():
+                result = self.client.predict(
+                    prompt,             # prompt
+                    "worst quality, inconsistent motion, blurry, jittery, distorted", # negative_prompt
+                    None,               # input_image_filepath
+                    None,               # input_video_filepath
+                    512,                # height_ui
+                    704,                # width_ui
+                    "text-to-video",    # mode
+                    min(float(duration), 2.0), # duration_ui (Cap at 2s for free tier reliability)
+                    9,                  # ui_frames_to_use
+                    0,                  # seed_ui
+                    True,               # randomize_seed
+                    3,                  # ui_guidance_scale
+                    True,               # improve_texture_flag
+                    False,              # slow_motion_flag
+                    api_name="/text_to_video"
+                )
+                # Result is ({'video': path, ...}, seed)
+                if isinstance(result, tuple) and isinstance(result[0], dict):
+                    video_file = result[0].get('video')
                 else:
-                    logger.error("Mochi generated empty file")
-                    return None
+                    video_file = result
+                
+            # Zeroscope Logic
+            elif "zeroscope" in self.model_name.lower():
+                result = self.client.predict(
+                    prompt,
+                    "cerspense/zeroscope_v2_576w", # Model choice
+                    api_name="/predict"
+                )
+                video_file = result
+                
+            # Modelscope / Damo Logic
+            elif "modelscope" in self.model_name.lower() or "damo" in self.model_name.lower():
+                result = self.client.predict(
+                    prompt,
+                    api_name="/predict"
+                )
+                video_file = result
+            
             else:
-                logger.error(f"Unexpected Mochi result type: {type(result)}")
+                # Generic fallback
+                try:
+                    # Try with just prompt
+                    result = self.client.predict(prompt, api_name="/predict")
+                except:
+                    # Try with prompt and seed
+                    result = self.client.predict(prompt, 0, api_name="/predict")
+                video_file = result
+
+            if video_file and os.path.exists(video_file):
+                # Move to output path
+                import shutil
+                shutil.move(video_file, output_path)
+                logger.info(f"✓ AI video generated: {output_path}")
+                return output_path
+            else:
+                logger.error("AI video generation returned invalid file")
                 return None
                 
         except Exception as e:
-            logger.error(f"Mochi video generation failed: {e}")
+            logger.error(f"AI video generation failed: {e}")
             return None
     
     def _enhance_prompt(self, prompt: str) -> str:

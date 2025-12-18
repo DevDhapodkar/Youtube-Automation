@@ -10,13 +10,13 @@ from config.settings import Config
 logger = logging.getLogger(__name__)
 
 class YouTubeUploader:
-    def __init__(self):
+    def __init__(self, interactive=False):
         self.SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly']
         self.client_secrets_file = os.path.join(Config.BASE_DIR, '..', 'client_secrets.json')
         self.token_file = os.path.join(Config.BASE_DIR, '..', 'token.pickle')
-        self.youtube = self._authenticate()
+        self.youtube = self._authenticate(interactive)
 
-    def _authenticate(self):
+    def _authenticate(self, interactive=False):
         creds = None
         if os.path.exists(self.token_file):
             with open(self.token_file, 'rb') as token:
@@ -25,7 +25,7 @@ class YouTubeUploader:
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-            else:
+            elif interactive:
                 if not os.path.exists(self.client_secrets_file):
                     logger.error("client_secrets.json not found. Cannot authenticate.")
                     return None
@@ -43,6 +43,8 @@ class YouTubeUploader:
                     f.write(auth_url)
                 
                 creds = flow.run_local_server(port=8080, prompt='consent')
+            else:
+                return None
             
             with open(self.token_file, 'wb') as token:
                 pickle.dump(creds, token)

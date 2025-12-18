@@ -1,8 +1,24 @@
 import logging
 import google.generativeai as genai
 from config.settings import Config
+import time
+import random
 
 logger = logging.getLogger(__name__)
+
+def retry_with_backoff(func, max_retries=5, initial_delay=5):
+    for i in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if "429" in str(e) or "Quota exceeded" in str(e) or "Resource exhausted" in str(e):
+                if i == max_retries - 1:
+                    raise e
+                delay = initial_delay * (2 ** i) + random.uniform(0, 1)
+                logger.warning(f"Gemini quota exceeded. Retrying in {delay:.2f}s...")
+                time.sleep(delay)
+            else:
+                raise e
 
 class TopicGenerator:
     def __init__(self):
@@ -60,10 +76,41 @@ class TopicGenerator:
         prompt = prompts.get(niche, prompts["general"])
         
         try:
-            response = self.model.generate_content(prompt)
+            response = retry_with_backoff(lambda: self.model.generate_content(prompt))
             topic = response.text.strip()
             logger.info(f"Generated topic for {niche}: {topic}")
             return topic
         except Exception as e:
             logger.error(f"Topic generation failed: {e}")
             return f"Trending {niche.replace('_', ' ').title()} Topic"
+
+    def generate_catchy_title(self, topic):
+        """
+        Generate a short, clickable, viral YouTube title based on the topic.
+        """
+        if not self.model:
+            return topic
+
+        prompt = f"""
+        Rewrite this topic into a SINGLE, short, viral, clickbaity YouTube Short title.
+        Topic: "{topic}"
+        
+        Rules:
+        - Max 6 words.
+        - Use ALL CAPS for key words.
+        - No hashtags.
+        - No quotes.
+        - Make it sound like something a human would click.
+        - Examples: "I Found The SCARIEST Website", "The TRUTH About Dreams", "Do NOT Go Here"
+        
+        Output ONLY the title.
+        """
+        
+        try:
+            response = retry_with_backoff(lambda: self.model.generate_content(prompt))
+            title = response.text.strip().replace('"', '')
+            logger.info(f"Generated catchy title: {title}")
+            return title
+        except Exception as e:
+            logger.error(f"Title generation failed: {e}")
+            return topic

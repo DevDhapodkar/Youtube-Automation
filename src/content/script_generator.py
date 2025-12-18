@@ -106,6 +106,7 @@ class ScriptGenerator:
             2. Body: What happened, why it matters, and what's next.
             3. CTA: "Subscribe to stay updated."
             """
+
         else: # GENERAL / TRENDING
             prompt = f"""
             {base_short}
@@ -118,13 +119,26 @@ class ScriptGenerator:
             """
 
         try:
-            response = self.model.generate_content(prompt)
-            script = response.text
-            logger.info("Script generated successfully.")
-            return script
+            # Simple retry logic
+            import time
+            import random
+            
+            for i in range(3):
+                try:
+                    response = self.model.generate_content(prompt)
+                    return response.text
+                except Exception as e:
+                    if "429" in str(e) or "Quota" in str(e):
+                        if i == 2: raise e
+                        sleep_time = 5 * (i + 1)
+                        logger.warning(f"Gemini quota exceeded. Retrying in {sleep_time}s...")
+                        time.sleep(sleep_time)
+                    else:
+                        raise e
+                        
         except Exception as e:
             logger.error(f"Script generation failed: {e}")
-            return f"Welcome to our channel. Today we talk about {topic}. Please subscribe."
+            return None
 
 if __name__ == "__main__":
     gen = ScriptGenerator()

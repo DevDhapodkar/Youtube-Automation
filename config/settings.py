@@ -9,6 +9,7 @@ class Config:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
     ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+    FREESOUND_API_KEY = os.getenv("FREESOUND_API_KEY", "")
     
     # Paths
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))

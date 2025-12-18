@@ -35,25 +35,39 @@ class SoundEffectGenerator:
         
         query = queries.get(niche, queries["general"])
         
-        # Check if we already have a cached sound for this niche
-        cached_file = os.path.join(self.sfx_dir, f"{niche}_ambient.mp3")
-        if os.path.exists(cached_file):
-            logger.info(f"Using cached ambient sound for {niche}")
-            return cached_file
+        # Check if we have cached sounds for this niche
+        import glob
+        import random
         
-        # If no API key, skip sound effects
+        # Create niche directory
+        niche_dir = os.path.join(self.sfx_dir, niche)
+        if not os.path.exists(niche_dir):
+            os.makedirs(niche_dir)
+            
+        # Get existing files
+        existing_files = glob.glob(os.path.join(niche_dir, "*.mp3"))
+        
+        # 30% chance to reuse an existing file if we have enough variety (at least 3)
+        if len(existing_files) >= 3 and random.random() < 0.3:
+            selected = random.choice(existing_files)
+            logger.info(f"Reusing cached ambient sound: {os.path.basename(selected)}")
+            return selected
+        
+        # If no API key, try to return an existing file or fail
         if not self.api_key:
+            if existing_files:
+                return random.choice(existing_files)
             logger.warning("FREESOUND_API_KEY not set. Skipping sound effects.")
-            logger.info("Get free API key at: https://freesound.org/apiv2/apply/")
             return None
         
         try:
             # Search for sound effects
             params = {
                 "query": query,
-                "filter": "duration:[20 TO 120] type:mp3",  # 20-120 second MP3 files
-                "sort": "downloads_desc",  # Most downloaded first
-                "fields": "id,name,previews",
+                "filter": "duration:[20 TO 180] type:mp3",  # 20-180 second MP3 files
+                "sort": "rating_desc",  # Highest rated first (better quality than downloads)
+                "page_size": 20, # Get top 20
+                "fields": "id,name,previews,username",
                 "token": self.api_key
             }
             
@@ -63,29 +77,34 @@ class SoundEffectGenerator:
             data = response.json()
             
             if data.get("results"):
-                # Get first result
-                sound = data["results"][0]
-                preview_url = sound.get("previews", {}).get("preview-hq-mp3")
+                # Pick a random sound from top results
+                results = data["results"]
+                sound = random.choice(results)
                 
+                # Check if already downloaded
+                sound_id = sound.get("id")
+                safe_name = "".join([c for c in sound.get("name", "sound") if c.isalpha() or c.isdigit()]).rstrip()
+                filename = f"{sound_id}_{safe_name}.mp3"
+                file_path = os.path.join(niche_dir, filename)
+                
+                if os.path.exists(file_path):
+                    logger.info(f"Sound already exists: {filename}")
+                    return file_path
+                
+                preview_url = sound.get("previews", {}).get("preview-hq-mp3")
                 if not preview_url:
                     preview_url = sound.get("previews", {}).get("preview-lq-mp3")
                 
                 if preview_url:
-                    logger.info(f"Downloading ambient sound: {sound.get('name')}")
+                    logger.info(f"Downloading ambient sound: {sound.get('name')} by {sound.get('username')}")
                     audio_response = requests.get(preview_url, timeout=30)
                     audio_response.raise_for_status()
                     
-                    # Validate it's actually audio
-                    content_type = audio_response.headers.get('content-type', '')
-                    if 'audio' not in content_type and 'mpeg' not in content_type:
-                        logger.warning(f"Downloaded file is not audio (type: {content_type}), skipping")
-                        return None
-                    
-                    with open(cached_file, 'wb') as f:
+                    with open(file_path, 'wb') as f:
                         f.write(audio_response.content)
                     
-                    logger.info(f"Ambient sound saved to {cached_file}")
-                    return cached_file
+                    logger.info(f"Ambient sound saved to {file_path}")
+                    return file_path
             
             logger.warning(f"No ambient sounds found for {niche}")
             return None

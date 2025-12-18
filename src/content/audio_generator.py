@@ -112,7 +112,7 @@ class AudioGenerator:
         
         # gTTS is imported on-demand
     
-    def generate_audio(self, text: str, output_file: str, target_duration: int = 60) -> str:
+    def generate_audio(self, text: str, output_file: str, target_duration: int = 60, niche: str = "general") -> str:
         """
         Generate audio using best available TTS engine.
         
@@ -120,11 +120,16 @@ class AudioGenerator:
             text: Text to convert to speech
             output_file: Path to save audio file
             target_duration: Target duration in seconds (for padding if needed)
+            niche: Content niche (e.g., 'horror', 'news', 'tech')
             
         Returns:
             Path to generated audio file, or None if failed
         """
-        logger.info(f"Generating audio for text ({len(text)} chars)")
+        logger.info(f"Generating audio for text ({len(text)} chars) - Niche: {niche}")
+        
+        # Select voice based on niche/content
+        voice_config = self._select_voice(text, niche)
+        logger.info(f"Selected voice config: {voice_config}")
         
         # Try ElevenLabs first (best quality)
         if Config.ELEVENLABS_API_KEY:
@@ -142,7 +147,7 @@ class AudioGenerator:
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(
                     asyncio.run,
-                    self._generate_with_edge_tts(text, output_file)
+                    self._generate_with_edge_tts(text, output_file, voice_config)
                 )
                 future.result(timeout=30)
             
@@ -165,25 +170,72 @@ class AudioGenerator:
             logger.error(f"All TTS engines failed: {e}")
             return None
     
-    async def _generate_with_edge_tts(self, text: str, output_file: str):
+    def _select_voice(self, text: str, niche: str) -> dict:
+        """
+        Select appropriate voice based on niche and text content.
+        """
+        niche = niche.lower()
+        text_lower = text.lower()
+        
+        # Default config
+        config = {
+            "voice": "en-US-JennyNeural",
+            "rate": "+0%",
+            "pitch": "+0Hz"
+        }
+        
+        # Analyze content for gender hints
+        is_male_narrator = any(word in text_lower for word in [" i'm a guy", " i am a man", " my wife", " my girlfriend"])
+        
+        if "horror" in niche or "scary" in niche or "creepypasta" in niche:
+            # Creepy/Horror style
+            config["voice"] = "en-US-ChristopherNeural" # Deep male voice
+            config["rate"] = "-10%" # Slower
+            config["pitch"] = "-5Hz" # Lower pitch
+        
+        elif "news" in niche:
+            # Professional News style
+            config["voice"] = "en-US-AriaNeural" # Professional female
+            config["rate"] = "+5%" # Slightly faster
+        
+        elif "tech" in niche or "coding" in niche:
+            # Tech/Educational style
+            config["voice"] = "en-US-ChristopherNeural" # Professional male
+        
+        elif "motivation" in niche:
+            # Motivational style
+            config["voice"] = "en-US-EricNeural" # Friendly/Energetic male
+            config["rate"] = "+0%"
+        
+        elif is_male_narrator:
+            config["voice"] = "en-US-GuyNeural" # Casual male
+            
+        return config
+
+    async def _generate_with_edge_tts(self, text: str, output_file: str, voice_config: dict = None):
         """
         Generate audio with edge-tts.
         Tries multiple voices if the primary one fails.
         """
-        voices = [
-            "en-US-JennyNeural",      # Female, very natural
-            "en-US-ChristopherNeural", # Male, very natural
-            "en-US-EricNeural",       # Male, natural
-            "en-US-GuyNeural",        # Male
-            "en-US-AriaNeural"        # Female
-        ]
+        if voice_config is None:
+            voice_config = {"voice": "en-US-JennyNeural", "rate": "+0%", "pitch": "+0Hz"}
+            
+        primary_voice = voice_config["voice"]
+        rate = voice_config.get("rate", "+0%")
+        pitch = voice_config.get("pitch", "+0Hz")
+        
+        # List of voices to try (primary first)
+        voices = [primary_voice, "en-US-JennyNeural", "en-US-ChristopherNeural"]
+        
+        # Remove duplicates while preserving order
+        voices = list(dict.fromkeys(voices))
         
         last_error = None
         
         for voice in voices:
             try:
-                logger.info(f"Trying edge-tts voice: {voice}")
-                communicate = edge_tts.Communicate(text, voice)
+                logger.info(f"Trying edge-tts voice: {voice} (Rate: {rate}, Pitch: {pitch})")
+                communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
                 submaker = edge_tts.SubMaker()
                 
                 # Create a temporary file for this attempt

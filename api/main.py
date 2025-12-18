@@ -149,38 +149,43 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
             raise asyncio.CancelledError("Task stopped by user")
         
         # Use AI to generate topics dynamically
-        from src.content.topic_generator import TopicGenerator
+        from src.content.unified_generator import UnifiedContentGenerator
+        unified_gen = UnifiedContentGenerator()
         
         # Run blocking topic generation in thread
+        trend_analyzer = TrendAnalyzer()
+        
+        content_data = None
         if niche == Niche.NEWS:
-            trend_analyzer = TrendAnalyzer()
             topic = await asyncio.to_thread(trend_analyzer.select_topic)
             if topic:
-                topic = f"Breaking: {topic}"
+                content_data = await asyncio.to_thread(unified_gen.generate_content_from_topic, topic, niche.value)
         elif niche == Niche.GENERAL or niche == Niche.TRENDING:
-            trend_analyzer = TrendAnalyzer()
             topic = await asyncio.to_thread(trend_analyzer.select_topic)
+            if topic:
+                content_data = await asyncio.to_thread(unified_gen.generate_content_from_topic, topic, niche.value)
         else:
-            topic_gen = TopicGenerator()
-            topic = await asyncio.to_thread(topic_gen.generate_topic, niche.value)
+            content_data = await asyncio.to_thread(unified_gen.generate_full_content, niche.value)
             
+        if not content_data:
+            raise Exception("Content generation failed")
+
+        topic = content_data.get("topic")
+        viral_title = content_data.get("title")
+        script = content_data.get("script")
+        pre_generated_scenes = content_data.get("scenes")
+
         await manager.broadcast({"type": "log", "data": f"Selected Topic: {topic}"})
-        
-        if not topic:
-            raise Exception("No topic selected")
+        await manager.broadcast({"type": "log", "data": f"Generated Title: {viral_title}"})
 
         # Check if stopped
         if not state.is_running:
             raise asyncio.CancelledError("Task stopped by user")
 
         # 2. Content Generation
-        state.current_action = f"Generating Script for: {topic}"
+        state.current_action = f"Content Ready for: {topic}"
         await manager.broadcast({"type": "status", "data": state.current_action})
-        
-        script_gen = ScriptGenerator()
-        # Run blocking script generation in thread
-        script = await asyncio.to_thread(script_gen.generate_script, topic, niche=niche)
-        await manager.broadcast({"type": "log", "data": "Script generated."})
+        await manager.broadcast({"type": "log", "data": "Script and scenes generated in one call."})
         
         # Check if stopped
         if not state.is_running:
@@ -202,7 +207,9 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
             script=script,
             output_path=video_path,
             target_duration=60,
-            niche=niche.value
+            niche=niche.value,
+            stop_check=lambda: not state.is_running,
+            pre_generated_scenes=pre_generated_scenes
         )
         
         # Check if stopped
@@ -223,8 +230,12 @@ async def run_automation_cycle(niche: Niche = Niche.GENERAL):
              description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts #{niche.value}"
              tags = ["shorts", "ai", "facts", niche.value, topic.split()[0]]
              
+             # Upload to YouTube
+             logger.info(f"Uploading video: {viral_title}")
+             await manager.broadcast({"type": "log", "data": "Uploading to YouTube..."})
+             
              # UNCOMMENT TO ENABLE REAL UPLOAD
-             video_id = await asyncio.to_thread(uploader.upload_video, final_video, topic, description, tags)
+             video_id = await asyncio.to_thread(uploader.upload_video, final_video, viral_title, description, tags)
              await manager.broadcast({"type": "log", "data": f"Uploaded! ID: {video_id}"})
              
              # await manager.broadcast({"type": "log", "data": "Upload simulated (Safety Mode). Uncomment in api/main.py to enable."})
@@ -321,19 +332,31 @@ async def stop_agent():
     return {"message": "Stopped"}
 
 @app.post("/auth")
-def authenticate_youtube():
+async def authenticate_youtube():
     """
-    Trigger OAuth flow explicitly
+    Trigger OAuth flow explicitly in background
     """
-    try:
-        uploader = YouTubeUploader()
-        if uploader.youtube:
-            state.is_authenticated = True
-            return {"message": "Authenticated successfully", "success": True}
-        else:
-            return {"message": "Authentication failed", "success": False}
-    except Exception as e:
-        return {"message": str(e), "success": False}
+    if state.is_authenticated:
+        return {"message": "Already authenticated", "success": True}
+
+    def run_auth():
+        try:
+            logger.info("Starting interactive authentication...")
+            # This will block until user authenticates in browser
+            uploader = YouTubeUploader(interactive=True)
+            if uploader.youtube:
+                state.is_authenticated = True
+                logger.info("Authentication successful!")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Auth failed: {e}")
+            return False
+
+    # Run in thread so we don't block the API
+    asyncio.create_task(asyncio.to_thread(run_auth))
+    
+    return {"message": "Authentication started. Please check the opened browser window or logs for the URL.", "success": True}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

@@ -1,7 +1,10 @@
 import logging
 import re
+import json
+import google.generativeai as genai
 from typing import List, Dict
 from dataclasses import dataclass
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -34,20 +37,36 @@ class SceneManager:
         """
         self.min_scene_duration = min_scene_duration
         self.max_scene_duration = max_scene_duration
+        
+        # Initialize Gemini
+        if Config.GEMINI_API_KEY:
+            genai.configure(api_key=Config.GEMINI_API_KEY)
+            self.model = genai.GenerativeModel('gemini-flash-latest')
+        else:
+            self.model = None
     
-    def parse_script_to_scenes(self, script: str, target_duration: int = 60) -> List[Scene]:
+    def parse_script_to_scenes(self, script: str, target_duration: int = 60, pre_generated_scenes: List[Dict] = None) -> List[Scene]:
         """
         Parse a script into logical scenes.
         
         Args:
             script: The full script text
             target_duration: Target total video duration in seconds
+            pre_generated_scenes: Optional list of scenes with text and keywords from UnifiedContentGenerator
             
         Returns:
             List of Scene objects
         """
         logger.info(f"Parsing script into scenes (target duration: {target_duration}s)")
         
+        if not script:
+            logger.error("Script is empty or None")
+            return []
+            
+        if pre_generated_scenes:
+            logger.info("Using pre-generated scenes and keywords...")
+            return self._create_scenes_from_pre_generated(pre_generated_scenes, target_duration)
+
         # Split script into sentences
         sentences = self._split_into_sentences(script)
         
@@ -61,9 +80,90 @@ class SceneManager:
         # Create Scene objects with timing
         scenes = self._create_scenes_with_timing(scene_groups, target_duration)
         
+        # Enhance with AI keywords if available
+        if self.model:
+            scenes = self._enhance_scenes_with_ai(scenes)
+        
         logger.info(f"Created {len(scenes)} scenes from script")
         return scenes
     
+    def _create_scenes_from_pre_generated(self, pre_generated_scenes: List[Dict], target_duration: int) -> List[Scene]:
+        """Create Scene objects from pre-generated data."""
+        scenes = []
+        
+        # Calculate total words
+        total_words = sum(len(s["text"].split()) for s in pre_generated_scenes)
+        time_per_word = target_duration / total_words if total_words > 0 else 0
+        
+        current_time = 0.0
+        for idx, s in enumerate(pre_generated_scenes):
+            text = s["text"]
+            word_count = len(text.split())
+            duration = word_count * time_per_word
+            
+            scene = Scene(
+                scene_id=idx + 1,
+                text=text,
+                duration=duration,
+                start_time=current_time,
+                end_time=current_time + duration,
+                keywords=s.get("keywords", []),
+                visual_style=self._determine_visual_style(idx, len(pre_generated_scenes))
+            )
+            scenes.append(scene)
+            current_time += duration
+            
+        return self._adjust_scene_timing(scenes, target_duration)
+
+    def _enhance_scenes_with_ai(self, scenes: List[Scene]) -> List[Scene]:
+        """Use Gemini to generate better visual keywords for each scene."""
+        try:
+            logger.info("Enhancing scene visuals with AI...")
+            
+            # Prepare prompt
+            scenes_text = "\n".join([f"Scene {s.scene_id}: {s.text}" for s in scenes])
+            
+            prompt = f"""
+            Analyze the following video script scenes and provide 3 highly specific, visual search terms for stock footage for EACH scene.
+            The search terms should describe what we should SEE, not abstract concepts.
+            Avoid generic words like "something", "there", "it".
+            Use concrete nouns and adjectives (e.g., "dark stormy ocean", "scared woman face", "ancient library books").
+            
+            Script:
+            {scenes_text}
+            
+            Return ONLY a JSON object mapping scene IDs to a list of 3 keywords/phrases.
+            Format: {{"1": ["keyword1", "keyword2", "keyword3"], "2": [...]}}
+            """
+            
+            response = self.model.generate_content(prompt)
+            text = response.text.strip()
+            
+            # Extract JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+                
+            keywords_map = json.loads(text)
+            
+            # Update scenes
+            for scene in scenes:
+                sid = str(scene.scene_id)
+                if sid in keywords_map:
+                    # Combine AI keywords with existing ones (prioritizing AI)
+                    ai_keywords = keywords_map[sid]
+                    scene.keywords = ai_keywords + scene.keywords
+                    # Keep top 5
+                    scene.keywords = scene.keywords[:5]
+                    logger.info(f"  Scene {sid} AI keywords: {ai_keywords}")
+            
+            return scenes
+            
+        except Exception as e:
+            logger.error(f"AI visual enhancement failed: {e}")
+            return scenes
+
     def _split_into_sentences(self, text: str) -> List[str]:
         """Split text into sentences."""
         # Remove extra whitespace
@@ -199,7 +299,10 @@ class SceneManager:
             'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
             'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
             'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these',
-            'those', 'it', 'its', 'they', 'them', 'their'
+            'those', 'it', 'its', 'they', 'them', 'their', 'something', 'there',
+            'here', 'what', 'when', 'where', 'why', 'how', 'all', 'any', 'both',
+            'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
+            'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very'
         }
         
         # Extract words
