@@ -126,6 +126,9 @@ class SceneManager:
             prompt = f"""
             Analyze the following video script scenes and provide 3 highly specific, descriptive visual search terms for Pexels stock footage for EACH scene.
             The search terms should describe exactly what we should SEE, using concrete nouns and vivid adjectives.
+            
+            CRITICAL: Scene 1 is the "INTRO/HOOK". The visuals for Scene 1 MUST be extremely attention-grabbing, cinematic, and relevant to the hook text to prevent users from scrolling away.
+            
             Avoid generic words like "something", "there", "it", "dee".
             Use descriptive phrases (e.g., "dark stormy ocean with massive waves", "scared woman face close up cinematic", "ancient dusty library with sunlight beams").
             

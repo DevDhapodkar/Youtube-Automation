@@ -50,7 +50,7 @@ class ScriptGenerator:
             Topic: {topic} (Horror/Scary Story)
             Style: Eerie, suspenseful, fast-paced.
             Structure:
-            1. Hook (0-3s): Start with a terrifying fact or question.
+            1. Hook (0-8s): Start with a terrifying fact or shocking question that forces the viewer to stay.
             2. Body: Tell a mini-horror story or creepy fact. Build tension.
             3. Climax/CTA: A shocking twist or "Subscribe for more nightmares".
             """
@@ -60,7 +60,7 @@ class ScriptGenerator:
             Topic: {topic} (Horror Story Premise)
             Style: Narrative, suspenseful, cinematic. First-person or third-person storytelling.
             Structure:
-            1. Hook (0-3s): Set the eerie scene immediately. "I was working the night shift when..."
+            1. Hook (0-8s): Set the eerie scene immediately with a curiosity gap. "I was working the night shift when I saw something that shouldn't exist..."
             2. Body: Build suspense with creepy details. Something is wrong. Tension escalates.
             3. Climax: The terrifying reveal or cliffhanger. "That's when I realized..." Leave them wanting more.
             
@@ -72,7 +72,7 @@ class ScriptGenerator:
             Topic: {topic} (History)
             Style: Educational but dramatic, "Did you know?" style.
             Structure:
-            1. Hook: "You won't believe this about [Historical Figure/Event]..."
+            1. Hook (0-8s): "You won't believe this about [Historical Figure/Event]..." or "The dark secret history doesn't want you to know..."
             2. Body: Reveal a mind-blowing historical fact or misconception.
             3. CTA: "Subscribe for daily history facts."
             """
@@ -82,7 +82,7 @@ class ScriptGenerator:
             Topic: {topic} (SCP Foundation)
             Style: Clinical but unsettling, "Classified" vibe.
             Structure:
-            1. Hook: "Item #: {topic}..." or "Warning: Classified."
+            1. Hook (0-8s): "Item #: {topic}... Level 5 Clearance Required. What you're about to see is strictly classified."
             2. Body: Describe the anomaly's containment procedures and scary properties.
             3. CTA: "Secure. Contain. Protect. Subscribe."
             """
@@ -92,7 +92,7 @@ class ScriptGenerator:
             Topic: {topic} (Life Advice/Psychology)
             Style: Direct, empowering, "dark psychology" or "stoic" vibe.
             Structure:
-            1. Hook: "Stop doing this if you want..." or "Here is how to..."
+            1. Hook (0-8s): "Stop doing this if you want to be successful..." or "The 1% know this secret about human psychology..."
             2. Body: 3 quick, actionable psychological tricks or advice.
             3. CTA: "Save this video and subscribe to level up."
             """
@@ -102,7 +102,7 @@ class ScriptGenerator:
             Topic: {topic} (News/Tech)
             Style: Urgent, breaking news style.
             Structure:
-            1. Hook: "BREAKING: {topic} just changed everything."
+            1. Hook (0-8s): "BREAKING: {topic} just changed everything. This is not a drill."
             2. Body: What happened, why it matters, and what's next.
             3. CTA: "Subscribe to stay updated."
             """
@@ -113,7 +113,7 @@ class ScriptGenerator:
             Topic: {topic}
             Style: High energy, viral curiosity gap.
             Structure:
-            1. Hook (0-3s): Grab attention immediately.
+            1. Hook (0-8s): Grab attention immediately with a curiosity gap or shocking statement.
             2. Body: Deliver value/facts quickly.
             3. CTA: Ask to subscribe.
             """

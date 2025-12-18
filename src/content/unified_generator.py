@@ -50,6 +50,7 @@ class UnifiedContentGenerator:
              (e.g., instead of "cabin", use "ancient rusted hunting cabin in deep woods")
         
         Rules for "{niche}":
+        - CRITICAL: The first 5-10 seconds (Scene 1) MUST be an attention-grabbing "HOOK". It should create curiosity, ask a shocking question, or show a mind-blowing fact so the user doesn't scroll away.
         - If horror: Eerie, suspenseful, fast-paced.
         - If history: Educational but dramatic.
         - If scp: Clinical but unsettling.
@@ -97,6 +98,7 @@ class UnifiedContentGenerator:
              (e.g., instead of "forest", use "dark eerie misty pine forest at night")
         
         Rules:
+        - CRITICAL: The first 5-10 seconds (Scene 1) MUST be an attention-grabbing "HOOK". It should create curiosity, ask a shocking question, or show a mind-blowing fact so the user doesn't scroll away.
         - The script should be divided into 6-8 logical scenes.
         - Return ONLY the JSON object.
         """
