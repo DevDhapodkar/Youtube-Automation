@@ -3,6 +3,9 @@ from typing import List
 from src.content.scene_manager import Scene
 from src.content.visual_generator import VisualGenerator
 from src.content.ai_video_generator import AIVideoGenerator
+import google.generativeai as genai
+from config.settings import Config
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,13 @@ class SceneVisualCoordinator:
     def __init__(self):
         self.visual_gen = VisualGenerator()
         self.ai_video_gen = AIVideoGenerator()
+        
+        # Initialize Gemini for query refinement
+        if Config.GEMINI_API_KEY:
+            genai.configure(api_key=Config.GEMINI_API_KEY)
+            self.model = genai.GenerativeModel('gemini-flash-latest')
+        else:
+            self.model = None
     
     def get_visuals_for_scene(self, scene: Scene, min_visuals: int = 2) -> List[str]:
         """
@@ -78,6 +88,11 @@ class SceneVisualCoordinator:
         # Use scene keywords for search
         queries = scene.keywords[:3]  # Top 3 keywords
         
+        if not queries or any(len(q) < 4 for q in queries):
+            # Refine queries if they are missing or too short/generic
+            logger.info(f"Refining search queries for scene {scene.scene_id}...")
+            queries = self._refine_search_queries(scene)
+        
         if not queries:
             # Fallback to generic query
             queries = ["nature", "abstract"]
@@ -120,6 +135,43 @@ class SceneVisualCoordinator:
         
         return images
     
+    def _refine_search_queries(self, scene: Scene) -> List[str]:
+        """Use Gemini to transform scene text/keywords into high-quality Pexels search queries."""
+        if not self.model:
+            return scene.keywords[:3]
+            
+        try:
+            prompt = f"""
+            Given the following video scene text and existing keywords, generate 3 highly specific, descriptive search queries for Pexels stock footage.
+            The queries should be search-engine friendly (2-5 words) and describe exactly what we should SEE.
+            Avoid generic words like "something", "there", "it", "dee".
+            
+            Scene Text: {scene.text}
+            Existing Keywords: {', '.join(scene.keywords)}
+            
+            Return ONLY a JSON list of 3 strings.
+            Example: ["dark eerie forest misty", "ancient wooden cabin exterior", "shattered glass window close up"]
+            """
+            
+            response = self.model.generate_content(prompt)
+            text = response.text.strip()
+            
+            # Extract JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+            
+            refined_queries = json.loads(text)
+            if isinstance(refined_queries, list) and len(refined_queries) > 0:
+                logger.info(f"  Refined queries: {refined_queries}")
+                return refined_queries
+                
+        except Exception as e:
+            logger.error(f"Query refinement failed: {e}")
+            
+        return scene.keywords[:3]
+
     def _create_video_prompt(self, scene: Scene) -> str:
         """Create AI video generation prompt from scene."""
         # Use first sentence of scene text + keywords

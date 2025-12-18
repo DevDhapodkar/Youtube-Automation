@@ -46,7 +46,8 @@ class UnifiedContentGenerator:
         3. "script": A highly engaging spoken script (180-200 words). No scene directions.
         4. "scenes": A list of objects, each with:
            - "text": The specific part of the script for this scene.
-           - "keywords": 3 highly specific visual search terms for stock footage.
+           - "keywords": 3 highly specific, descriptive visual search terms for Pexels stock footage. 
+             (e.g., instead of "cabin", use "ancient rusted hunting cabin in deep woods")
         
         Rules for "{niche}":
         - If horror: Eerie, suspenseful, fast-paced.
@@ -92,7 +93,8 @@ class UnifiedContentGenerator:
         2. "script": A highly engaging spoken script (180-200 words). No scene directions.
         3. "scenes": A list of objects, each with:
            - "text": The specific part of the script for this scene.
-           - "keywords": 3 highly specific visual search terms for stock footage.
+           - "keywords": 3 highly specific, descriptive visual search terms for Pexels stock footage.
+             (e.g., instead of "forest", use "dark eerie misty pine forest at night")
         
         Rules:
         - The script should be divided into 6-8 logical scenes.

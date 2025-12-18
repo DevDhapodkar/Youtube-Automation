@@ -124,10 +124,10 @@ class SceneManager:
             scenes_text = "\n".join([f"Scene {s.scene_id}: {s.text}" for s in scenes])
             
             prompt = f"""
-            Analyze the following video script scenes and provide 3 highly specific, visual search terms for stock footage for EACH scene.
-            The search terms should describe what we should SEE, not abstract concepts.
-            Avoid generic words like "something", "there", "it".
-            Use concrete nouns and adjectives (e.g., "dark stormy ocean", "scared woman face", "ancient library books").
+            Analyze the following video script scenes and provide 3 highly specific, descriptive visual search terms for Pexels stock footage for EACH scene.
+            The search terms should describe exactly what we should SEE, using concrete nouns and vivid adjectives.
+            Avoid generic words like "something", "there", "it", "dee".
+            Use descriptive phrases (e.g., "dark stormy ocean with massive waves", "scared woman face close up cinematic", "ancient dusty library with sunlight beams").
             
             Script:
             {scenes_text}
