@@ -36,6 +36,7 @@ The scene-based video generation system has been fully implemented and integrate
 | Failing Thumbs | Robust multi-layer AI thumbnail generation |
 | Invalid Category ID | Fixed YouTube upload parameter mapping |
 | Silent Scenes | Multi-layered contextual sound effects (SFX) |
+| Thumb Permission | Handled 403 Forbidden with verification guidance |
 
 ## 📁 New Files Created
 

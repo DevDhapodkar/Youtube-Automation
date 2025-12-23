@@ -61,6 +61,10 @@ class UnifiedContentGenerator:
         
         GOAL: Maximize Audience Retention, Revenue (High CPM), and Subscriber Growth for the US Market.
         
+        CONSTRAINTS:
+        - Total Script Length: ~{script_length} words.
+        - Total Scene Count: Exactly {scene_count} scenes.
+        
         TONE & STYLE: 
         - Use American English and US-centric cultural references.
         - Be aggressive, high-energy, and professional.
@@ -145,7 +149,11 @@ class UnifiedContentGenerator:
         prompt = f"""
         You are a viral YouTube creator. Generate content for a {video_type} about "{topic}" in the "{niche}" niche.
         
-        GOAL: Maximize Audience Retention and Revenue (High CPM).
+        GOAL: Maximize Audience Retention, Revenue (High CPM), and Subscriber Growth for the US Market.
+        
+        CONSTRAINTS:
+        - Total Script Length: ~{script_length} words.
+        - Total Scene Count: Exactly {scene_count} scenes.
         
         Return a JSON object with the following fields:
         1. "title": A short, clickbaity, ALL CAPS title (max 6 words).

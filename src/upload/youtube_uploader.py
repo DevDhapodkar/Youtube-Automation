@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 
 class YouTubeUploader:
     def __init__(self, interactive=False, url_callback=None):
-        self.SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly']
+        self.SCOPES = [
+            'https://www.googleapis.com/auth/youtube.upload', 
+            'https://www.googleapis.com/auth/youtube.readonly',
+            'https://www.googleapis.com/auth/youtube.force-ssl'
+        ]
         self.client_secrets_file = os.path.join(Config.BASE_DIR, '..', 'client_secrets.json')
         self.token_file = os.path.join(Config.BASE_DIR, '..', 'token.pickle')
         self.youtube = self._authenticate(interactive, url_callback)
@@ -69,7 +73,7 @@ class YouTubeUploader:
                 'categoryId': category_id
             },
             'status': {
-                'privacyStatus': 'private', # Start private for safety
+                'privacyStatus': 'public', 
                 'selfDeclaredMadeForKids': False,
             }
         }
@@ -89,6 +93,15 @@ class YouTubeUploader:
             # Upload Thumbnail if provided
             if thumbnail_path and os.path.exists(thumbnail_path):
                 logger.info(f"Uploading thumbnail: {thumbnail_path}")
+                # VALIDATION: Ensure it's a valid image before uploading
+                try:
+                    from PIL import Image
+                    with Image.open(thumbnail_path) as img:
+                        img.verify()
+                except Exception as e:
+                    logger.error(f"Thumbnail file is invalid or not an image: {e}")
+                    return video_id # Still return video_id as it was uploaded
+
                 try:
                     self.youtube.thumbnails().set(
                         videoId=video_id,
@@ -96,7 +109,15 @@ class YouTubeUploader:
                     ).execute()
                     logger.info("Thumbnail uploaded successfully.")
                 except Exception as e:
-                    logger.error(f"Thumbnail upload failed: {e}")
+                    if "permissions" in str(e).lower() or "403" in str(e):
+                        logger.warning("=" * 50)
+                        logger.warning("THUMBNAIL PERMISSION ERROR:")
+                        logger.warning("Your YouTube channel is likely not verified for custom thumbnails.")
+                        logger.warning("Please verify your channel at: https://www.youtube.com/verify")
+                        logger.warning("The video was still uploaded, but you must set the thumbnail manually.")
+                        logger.warning("=" * 50)
+                    else:
+                        logger.error(f"Thumbnail upload failed: {e}")
             
             return video_id
         except Exception as e:

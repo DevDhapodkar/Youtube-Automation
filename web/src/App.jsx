@@ -524,13 +524,14 @@ function App() {
                                     onChange={(e) => setOrderDuration(e.target.value)}
                                     className="w-full p-3 bg-dark-800 border border-white/10 rounded-xl text-white focus:border-crimson-500 focus:outline-none"
                                 >
-                                    <option value="60">Short (&lt; 1 min)</option>
-                                    <option value="90">1 - 2 mins</option>
-                                    <option value="150">2 - 3 mins</option>
-                                    <option value="240">3 - 5 mins</option>
-                                    <option value="390">5 - 8 mins</option>
-                                    <option value="540">8 - 10 mins</option>
-                                    <option value="900">10+ mins</option>
+                                    <option value="30">30 Seconds</option>
+                                    <option value="60">1 Minute (Shorts)</option>
+                                    <option value="120">2 Minutes</option>
+                                    <option value="180">3 Minutes</option>
+                                    <option value="300">5 Minutes</option>
+                                    <option value="480">8 Minutes</option>
+                                    <option value="600">10 Minutes</option>
+                                    <option value="900">15 Minutes</option>
                                 </select>
                             </div>
                         </div>

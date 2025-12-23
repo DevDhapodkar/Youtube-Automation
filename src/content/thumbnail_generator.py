@@ -36,7 +36,6 @@ class ThumbnailGenerator:
         overlay_text = concept.get("overlay_text")
         
         # 2. Generate Base Image
-        # 2. Generate Base Image
         image_path = os.path.join(Config.ASSETS_DIR, f"thumb_{int(random.random()*10000)}.jpg")
         
         success = self._generate_base_image(visual_prompt, image_path)
@@ -48,6 +47,22 @@ class ThumbnailGenerator:
         # Always try to add text, even on fallback
         final_path = self._add_text_overlay(image_path, overlay_text)
         
+        # 4. Final Validation
+        if final_path and os.path.exists(final_path):
+            try:
+                with Image.open(final_path) as img:
+                    img.verify()
+                # Check file size (2MB limit for YouTube)
+                size_mb = os.path.getsize(final_path) / (1024 * 1024)
+                if size_mb > 2:
+                    logger.warning(f"Thumbnail is too large ({size_mb:.2f}MB). Re-saving with lower quality.")
+                    with Image.open(final_path) as img:
+                        img.convert("RGB").save(final_path, "JPEG", quality=85)
+                return final_path
+            except Exception as e:
+                logger.error(f"Generated thumbnail is invalid: {e}")
+                return None
+                
         return final_path
 
     def _get_thumbnail_concept(self, topic, niche, viral_title):
@@ -102,18 +117,31 @@ class ThumbnailGenerator:
         width = 1280
         height = 720
         
-        max_retries = 3
         for attempt in range(max_retries):
             seed = random.randint(0, 1000000)
             url = f"https://pollinations.ai/p/{encoded_prompt}?width={width}&height={height}&seed={seed}&model=flux"
             
             try:
                 logger.info(f"Pollinations attempt {attempt+1}/{max_retries}")
-                response = requests.get(url, timeout=30) # Reduced timeout for faster failover
+                response = requests.get(url, timeout=30)
                 if response.status_code == 200:
+                    # VALIDATION: Check content type
+                    content_type = response.headers.get('Content-Type', '')
+                    if 'image' not in content_type:
+                        logger.warning(f"Pollinations returned non-image content: {content_type}")
+                        continue
+                        
                     with open(output_path, 'wb') as f:
                         f.write(response.content)
-                    return True
+                    
+                    # VALIDATION: Try to open image with PIL
+                    try:
+                        with Image.open(output_path) as img:
+                            img.verify()
+                        return True
+                    except Exception as e:
+                        logger.warning(f"Pollinations returned broken image: {e}")
+                        continue
                 else:
                     logger.warning(f"Pollinations failed with status {response.status_code}")
             except Exception as e:
@@ -205,67 +233,69 @@ class ThumbnailGenerator:
         Adds bold, high-contrast text to the thumbnail.
         """
         try:
-            img = Image.open(image_path)
-            draw = ImageDraw.Draw(img)
-            
-            # Try to load a bold font
-            # Cross-platform common paths
-            font_paths = [
-                # Windows
-                "C:\\Windows\\Fonts\\impact.ttf",
-                "C:\\Windows\\Fonts\\arialbd.ttf",
-                "C:\\Windows\\Fonts\\seguiemj.ttf",
-                # MacOS
-                "/System/Library/Fonts/Supplemental/Impact.ttf",
-                "/System/Library/Fonts/HelveticaNeue-CondensedBlack.otf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/Library/Fonts/Arial Black.ttf",
-                # Linux
-                "/usr/share/fonts/truetype/msttcorefonts/Impact.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-            ]
-            
-            font = None
-            for path in font_paths:
-                if os.path.exists(path):
-                    try:
-                        font = ImageFont.truetype(path, 100) # Large font size
-                        break
-                    except:
-                        continue
-            
-            if not font:
-                logger.warning("No custom font found, using default.")
-                font = ImageFont.load_default()
-
-            # Calculate text size and position (centered, slightly lower)
-            # Pillow 10+ uses textbbox
-            try:
-                left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-                text_width = right - left
-                text_height = bottom - top
-            except AttributeError:
-                # Older Pillow
-                text_width, text_height = draw.textsize(text, font=font)
-
-            x = (img.width - text_width) / 2
-            y = (img.height - text_height) / 2 + 100 # Slightly lower than center
-            
-            # Draw outline/stroke for contrast
-            stroke_width = 6
-            stroke_color = "black"
-            
-            # Draw text with stroke
-            draw.text((x, y), text, font=font, fill="white", stroke_width=stroke_width, stroke_fill=stroke_color)
-            
-            # Save
-            final_path = image_path.replace(".jpg", "_thumb.jpg")
-            img.save(final_path, quality=95)
-            logger.info(f"Thumbnail created: {final_path}")
-            
-            return final_path
+            with Image.open(image_path) as img:
+                # Ensure image is in RGB mode for saving as JPEG
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                    
+                draw = ImageDraw.Draw(img)
+                
+                # Try to load a bold font
+                font_paths = [
+                    # Windows
+                    "C:\\Windows\\Fonts\\impact.ttf",
+                    "C:\\Windows\\Fonts\\arialbd.ttf",
+                    # MacOS
+                    "/System/Library/Fonts/Supplemental/Impact.ttf",
+                    "/System/Library/Fonts/HelveticaNeue-CondensedBlack.otf",
+                    "/System/Library/Fonts/Helvetica.ttc",
+                    "/Library/Fonts/Arial Black.ttf",
+                    # Linux
+                    "/usr/share/fonts/truetype/msttcorefonts/Impact.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+                ]
+                
+                font = None
+                for path in font_paths:
+                    if os.path.exists(path):
+                        try:
+                            # Use a size relative to image height
+                            font_size = int(img.height / 7)
+                            font = ImageFont.truetype(path, font_size)
+                            break
+                        except:
+                            continue
+                
+                if not font:
+                    logger.warning("No custom font found, using default.")
+                    font = ImageFont.load_default()
+    
+                # Calculate text size and position
+                try:
+                    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+                    text_width = right - left
+                    text_height = bottom - top
+                except AttributeError:
+                    text_width, text_height = draw.textsize(text, font=font)
+    
+                x = (img.width - text_width) / 2
+                y = (img.height - text_height) / 2 + (img.height / 8)
+                
+                # Draw outline/stroke for contrast
+                stroke_width = max(2, int(img.height / 120))
+                stroke_color = "black"
+                
+                # Draw text with stroke
+                draw.text((x, y), text, font=font, fill="white", stroke_width=stroke_width, stroke_fill=stroke_color)
+                
+                # Save
+                final_path = image_path.replace(".jpg", "_thumb.jpg")
+                img.save(final_path, "JPEG", quality=95)
+                logger.info(f"Thumbnail created: {final_path}")
+                
+                return final_path
             
         except Exception as e:
-            logger.error(f"Text overlay failed: {e}")
-            return image_path # Return base image if overlay fails
+            logger.error(f"Text overlay failed (likely invalid image): {e}")
+            return None # Return None to indicate failure
