@@ -184,10 +184,14 @@ class SceneBasedVideoEditor:
             # Adjust MarginV based on resolution (lower for landscape)
             margin_v = 150 if height == 1920 else 50
             
+            # FFmpeg's subtitles filter is very picky about paths on Windows
+            # It needs colons and backslashes escaped
+            safe_srt_path = srt_path.replace('\\', '/').replace(':', '\\:')
+            
             subtitle_cmd = [
                 'ffmpeg', '-y',
                 '-i', temp_video,
-                '-vf', f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,Alignment=2,MarginV={margin_v},Bold=1'",
+                '-vf', f"subtitles='{safe_srt_path}':force_style='FontName=Arial,FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,Alignment=2,MarginV={margin_v},Bold=1'",
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '23',
@@ -296,7 +300,9 @@ class SceneBasedVideoEditor:
         with open(concat_file, 'w') as f:
             for _ in range(loops_needed):
                 for video_path in visual_paths:
-                    f.write(f"file '{video_path}'\n")
+                    # FFmpeg concat requires forward slashes even on Windows
+                    safe_path = video_path.replace("\\", "/")
+                    f.write(f"file '{safe_path}'\n")
         
         return concat_file
     
@@ -393,7 +399,9 @@ class SceneBasedVideoEditor:
         
         with open(concat_file, 'w') as f:
             for video in scene_videos:
-                f.write(f"file '{video}'\n")
+                # FFmpeg concat requires forward slashes even on Windows
+                safe_video_path = video.replace("\\", "/")
+                f.write(f"file '{safe_video_path}'\n")
         
         concat_cmd = [
             'ffmpeg', '-y',

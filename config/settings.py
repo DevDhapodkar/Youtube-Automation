@@ -12,8 +12,8 @@ class Config:
     FREESOUND_API_KEY = os.getenv("FREESOUND_API_KEY", "")
     
     # Paths
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    ASSETS_DIR = os.path.join(BASE_DIR, '..', 'assets')
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ASSETS_DIR = os.path.join(BASE_DIR, 'assets')
     
     # Settings
     VIDEO_RESOLUTION = (1080, 1920) # 9:16 for Shorts, change to (1920, 1080) for long form

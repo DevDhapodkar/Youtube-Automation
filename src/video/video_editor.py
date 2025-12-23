@@ -104,7 +104,9 @@ class VideoEditor:
             with open(concat_file, 'w') as f:
                 for _ in range(loops_needed):
                     for video_path in processed_visuals:
-                        f.write(f"file '{video_path}'\n")
+                        # FFmpeg concat requires forward slashes even on Windows
+                        safe_path = video_path.replace("\\", "/")
+                        f.write(f"file '{safe_path}'\n")
             
             # 3. Generate Subtitles (SRT) with proper timing based on audio duration
             srt_path = os.path.join(Config.ASSETS_DIR, "subtitles.srt")
@@ -147,14 +149,17 @@ class VideoEditor:
                 logger.error(f"FFmpeg concat failed: {result.stderr}")
                 return None
             
-            # Second pass: Add subtitles
+            # FFmpeg's subtitles filter is very picky about paths on Windows
+            # It needs colons and backslashes escaped
+            safe_srt_path = srt_path.replace('\\', '/').replace(':', '\\:')
+            
             logger.info("Adding subtitles...")
             final_output = output_path
             
             subtitle_cmd = [
                 'ffmpeg', '-y',
                 '-i', temp_video,
-                '-vf', f"subtitles={srt_path}:force_style='FontName=Arial Bold,FontSize=28,PrimaryColour=&H00FFFF00,OutlineColour=&H00000000,BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=60'",
+                '-vf', f"subtitles='{safe_srt_path}':force_style='FontName=Arial Bold,FontSize=28,PrimaryColour=&H00FFFF00,OutlineColour=&H00000000,BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=60'",
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '23',

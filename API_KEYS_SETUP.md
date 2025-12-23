@@ -1,44 +1,47 @@
-# YouTube Automation Agent - Environment Setup
+# 🔑 API & Cloud Setup Guide
 
-## Required API Keys
+To run the YouTube Automation Agent, you need several keys from different providers. This guide walks you through getting each one.
 
-Add these to your `.env` file:
+## 1. Google Gemini (AI Brain)
+- **Status**: Required
+- **Purpose**: Scriptwriting, topic discovery, and AI logic.
+- **Link**: [Google AI Studio](https://aistudio.google.com/app/apikey)
+- **Steps**:
+    1. Sign in with your Google account.
+    2. Click "Create API key".
+    3. Copy the key to `GEMINI_API_KEY` in your `.env`.
 
-```bash
-# Core APIs (Required)
-GEMINI_API_KEY=your_gemini_key_here
-PEXELS_API_KEY=your_pexels_key_here
-YOUTUBE_API_KEY=your_youtube_key_here
+## 2. Pexels (Stock Video)
+- **Status**: Required
+- **Purpose**: Main visual source for videos.
+- **Link**: [Pexels API](https://www.pexels.com/api/)
+- **Steps**:
+    1. Sign up/Login to Pexels.
+    2. Visit the API documentation and "Request API Key".
+    3. Copy to `PEXELS_API_KEY`.
 
-# Optional APIs (Enhances quality)
-HUGGINGFACE_API_KEY=your_huggingface_key_here  # For AI image generation
-PIXABAY_API_KEY=your_pixabay_key_here          # For sound effects
-```
+## 3. YouTube & Google Cloud (Automation)
+- **Status**: Required for Uploads
+- **Purpose**: Automated video uploads and trending analysis.
+- **Link**: [Google Cloud Console](https://console.cloud.google.com/)
+- **Steps**:
+    1. Create a new project.
+    2. Enable **YouTube Data API v3**.
+    3. Go to **Credentials** -> **Create Credentials** -> **OAuth Client ID** (Type: Desktop App).
+    4. Download the JSON and rename it to `client_secrets.json` in your project root.
+    5. Also create an **API Key** (restricted to YouTube Data API) and copy to `YOUTUBE_API_KEY`.
 
-## How to Get API Keys
+## 4. Optional Enhancements
+| Provider | Purpose | Where to Get |
+|----------|---------|--------------|
+| **Hugging Face** | AI Image Generation | [Tokens Page](https://huggingface.co/settings/tokens) |
+| **Pixabay** | Sound Effects | [API Docs](https://pixabay.com/api/docs/) |
+| **Freesound** | Ambient Audio | [API Apply](https://freesound.org/apiv2/apply) |
 
-### 1. Hugging Face (Free - for AI Images)
-1. Go to https://huggingface.co/
-2. Sign up for free account
-3. Go to Settings → Access Tokens
-4. Create new token (Read access is enough)
-5. Copy and paste into `.env`
+---
 
-### 2. Pixabay (Free - for Sound Effects)
-1. Go to https://pixabay.com/api/docs/
-2. Sign up for free account
-3. Get your API key from dashboard
-4. Copy and paste into `.env`
-
-## What Each Key Does
-
-- **GEMINI_API_KEY**: Generates scripts and topics
-- **PEXELS_API_KEY**: Downloads stock video footage
-- **YOUTUBE_API_KEY**: Fetches trending topics
-- **HUGGINGFACE_API_KEY**: Generates realistic AI images when stock footage unavailable
-- **PIXABAY_API_KEY**: Adds ambient sound effects (horror sounds, music, etc.)
-
-## Without Optional Keys
-
-- No HUGGINGFACE_API_KEY → Uses simple gradient placeholders instead of AI images
-- No PIXABAY_API_KEY → Videos have voice only, no ambient sounds
+### [Advanced] Vertex AI Setup
+If you prefer using Vertex AI over standard Gemini API:
+1. Enable **Vertex AI API** in Google Cloud.
+2. Ensure your Service Account has `Vertex AI User` role.
+3. Set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key path.

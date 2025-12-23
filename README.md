@@ -65,32 +65,51 @@ graph TD
 
 ## 🚀 Getting Started
 
-### Prerequisites
+### 1. Prerequisites
 
-- **Python 3.10+**
-- **FFmpeg**: Essential for video processing.
-  - `brew install ffmpeg` (Mac)
-  - `sudo apt install ffmpeg` (Linux)
+Before you begin, ensure you have the following installed:
+- **Python 3.10+**: [Download](https://www.python.org/downloads/)
+- **Node.js & npm**: [Download](https://nodejs.org/) (Required for the Web Dashboard)
+- **FFmpeg**: Essential for video/audio processing.
+    - **Mac**: `brew install ffmpeg`
+    - **Linux**: `sudo apt install ffmpeg`
+    - **Windows**: [Download FFmpeg](https://ffmpeg.org/download.html) and add to PATH.
 
-### Installation
+### 2. First Setup (Auto)
 
-1. **Clone & Install**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+We've provided a setup script to handle the heavy lifting:
 
-2. **Google Cloud Setup**:
-   - Enable **YouTube Data API v3** in your [Google Cloud Console](https://console.cloud.google.com/).
-   - Download `client_secrets.json` and place it in the project root.
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/ytagent.git
+cd ytagent
 
-3. **Configure Environment**:
-   Create a `.env` file:
-   ```env
-   GEMINI_API_KEY=your_key
-   PEXELS_API_KEY=your_key
-   YOUTUBE_API_KEY=your_key
-   UPLOAD_FREQUENCY_HOURS=24
-   ```
+# Run the interactive setup
+python setup.py
+```
+
+This script will:
+- Check for prerequisites (FFmpeg, Node, etc.)
+- Create your `.env` file from a template.
+- Initialize required directories.
+- Install all Python and Node.js dependencies.
+
+### 3. API Key Configuration
+
+Open the newly created `.env` file and fill in your keys. Refer to [API_KEYS_SETUP.md](API_KEYS_SETUP.md) for a detailed guide on where to get them.
+
+**Essential Keys:**
+- `GEMINI_API_KEY`: The brain behind the scripts.
+- `PEXELS_API_KEY`: High-quality stock footage.
+- `YOUTUBE_API_KEY`: Trend discovery.
+
+### 4. YouTube OAuth
+
+To enable automated uploads:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a project and enable **YouTube Data API v3**.
+3. Create OAuth 2.0 Credentials (Desktop App).
+4. Download the `client_secrets.json` and place it in the project root.
 
 ---
 
