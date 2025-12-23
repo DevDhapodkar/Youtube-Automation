@@ -10,7 +10,8 @@ function cn(...inputs) {
     return twMerge(clsx(inputs));
 }
 
-const WS_URL = 'ws://localhost:8000/ws';
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = `${protocol}//${window.location.host}/ws`;
 
 function App() {
     const [logs, setLogs] = useState([]);
@@ -50,7 +51,7 @@ function App() {
 
     useEffect(() => {
         // Initial status check
-        fetch('http://localhost:8000/status')
+        fetch('/status')
             .then(res => res.json())
             .then(data => {
                 setIsRunning(data.is_running);
@@ -89,7 +90,7 @@ function App() {
         if (newState && !isRunning) {
             // Start
             try {
-                await fetch('http://localhost:8000/start', { method: 'POST' });
+                await fetch('/start', { method: 'POST' });
                 setIsRunning(true);
             } catch (e) {
                 console.error(e);
@@ -97,7 +98,7 @@ function App() {
         } else if (!newState && isRunning) {
             // Stop
             try {
-                await fetch('http://localhost:8000/stop', { method: 'POST' });
+                await fetch('/stop', { method: 'POST' });
                 setIsRunning(false);
             } catch (e) {
                 console.error(e);
@@ -108,7 +109,7 @@ function App() {
     const authenticate = async () => {
         try {
             setLogs(prev => [...prev, "Starting Authentication... Check for browser window."]);
-            const res = await fetch('http://localhost:8000/auth', { method: 'POST' });
+            const res = await fetch('/auth', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 setIsAuthenticated(true);
@@ -123,7 +124,7 @@ function App() {
 
     const updateConfig = async () => {
         try {
-            const res = await fetch('http://localhost:8000/update_config', {
+            const res = await fetch('/update_config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -157,7 +158,7 @@ function App() {
 
         setIsOrdering(true);
         try {
-            const res = await fetch('http://localhost:8000/order_video', {
+            const res = await fetch('/order_video', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

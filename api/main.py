@@ -1,7 +1,9 @@
 import logging
 import io
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import asyncio
 import os
@@ -54,6 +56,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve Static Files
+frontend_dir = os.path.join(os.path.dirname(__file__), "..", "web", "dist")
+if os.path.exists(frontend_dir):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dir, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Allow API and WS routes to pass through
+        if full_path.startswith("api") or full_path == "ws" or full_path == "status" or full_path == "start" or full_path == "stop" or full_path == "auth" or full_path == "update_config" or full_path == "order_video":
+            return None # This will fall through to other routes
+        
+        # Check if the requested file exists in dist
+        path = os.path.join(frontend_dir, full_path)
+        if os.path.isfile(path):
+            return FileResponse(path)
+        
+        # Default to index.html for SPA routing
+        return FileResponse(os.path.join(frontend_dir, "index.html"))
+else:
+    logger.warning(f"Frontend directory not found at {frontend_dir}. UI will not be served.")
 
 # State
 class AgentState:
