@@ -37,8 +37,9 @@ class TopicGenerator:
             return "Default Topic"
 
         prompts = {
-            "horror": """Generate ONE viral horror topic for a YouTube Short. 
-            Examples: "The Rake Cryptid", "The Russian Sleep Experiment", "The Hat Man"
+            "horror": """Generate ONE high-engagement viral horror topic for a US YouTube audience. 
+            Focus on extreme curiosity or shocking facts.
+            Examples: "The Terrifying Truth of SCP-096", "Why You Should NEVER Visit This Forest In Maine", "The Russian Sleep Experiment: What They Hid"
             Output ONLY the topic name, nothing else.""",
             
             "horror_stories": """Generate ONE creepy, suspenseful story premise for a horror YouTube Short.
@@ -57,9 +58,9 @@ class TopicGenerator:
             Examples: "SCP-173 The Sculpture", "SCP-096 The Shy Guy"
             Output ONLY the SCP designation and name, nothing else.""",
             
-            "life_advice": """Generate ONE viral life advice/psychology topic for a YouTube Short.
-            Style: "How to [achieve something desirable]" or "[Psychology concept] That Actually Works"
-            Examples: "How to Read Anyone's Body Language", "Dark Psychology Tricks That Work"
+            "life_advice": """Generate ONE viral life advice/psychology topic for a high-status US YouTube audience.
+            Style: "How to [achieve something extremely desirable]" or "[Dark Psychology] That Actually Works"
+            Examples: "How to Read Anyone INSTANTLY", "The $10,000/Month Morning Routine", "Dark Psychology: How to Make Anyone Like You"
             Output ONLY the topic, nothing else.""",
             
             "news": """Generate ONE trending tech/news topic that would be viral right now.
@@ -67,9 +68,19 @@ class TopicGenerator:
             Examples: "AI Breakthrough Changes Everything", "New Discovery Shocks Scientists"
             Output ONLY the topic, nothing else.""",
             
-            "general": """Generate ONE viral, curiosity-gap topic for a YouTube Short.
-            Style: Surprising facts, mind-blowing revelations, "You won't believe..."
-            Examples: "The Truth About Dreams", "Why Humans Can't Breathe Underwater"
+            "general": """Generate ONE viral, curiosity-gap topic for a US YouTube audience.
+            Style: Extreme curiosity, "Breaking the Simulation", or "Things You Weren't Supposed to See".
+            Examples: "The Secret Map Found in the Vatican", "Why The Moon Landing Was Actually Faked?", "NASA Just Found Something Terrifying"
+            Output ONLY the topic, nothing else.""",
+            
+            "finance": """Generate ONE high-CPM finance/wealth topic for a US YouTube audience.
+            Style: Wealth creation, passive income, or economic warnings.
+            Examples: "How To Retire in 5 Years", "The Coming Economic Collapse of 2025", "Why 99% of People Will Always Be Poor"
+            Output ONLY the topic, nothing else.""",
+            
+            "tech": """Generate ONE viral tech/AI topic for a US YouTube audience.
+            Style: Future tech, AI breakthroughs, or "The End of [Industry]".
+            Examples: "Elon Musk: 'AI Is Already Among Us'", "The New iPhone Feature That Changes Everything", "Why AI Will Replace Your Job by 2026"
             Output ONLY the topic, nothing else."""
         }
 

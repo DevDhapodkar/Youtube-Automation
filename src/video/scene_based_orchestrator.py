@@ -43,13 +43,18 @@ class SceneBasedVideoOrchestrator:
         target_duration: int = 60,
         niche: str = "general",
         stop_check: callable = None,
-        pre_generated_scenes: List[dict] = None
+        pre_generated_scenes: List[dict] = None,
+        orientation: str = None  # Auto-detect if None
     ) -> str:
         """
         Create a complete video from script using scene-based approach.
         """
+        # Determine orientation if not provided
+        if not orientation:
+            orientation = "landscape" if target_duration > 90 else "portrait"
+            
         logger.info("=" * 70)
-        logger.info("SCENE-BASED VIDEO GENERATION STARTED")
+        logger.info(f"SCENE-BASED VIDEO GENERATION STARTED ({orientation})")
         logger.info("=" * 70)
         
         try:
@@ -76,9 +81,10 @@ class SceneBasedVideoOrchestrator:
             logger.info(f"✓ Created {len(scenes)} scenes")
             logger.info("\n" + self.scene_manager.get_scene_summary(scenes))
             
-            # Step 2: Generate audio for each scene
-            logger.info("\n[2/6] Generating audio for each scene...")
+            # Step 2: Generate audio and SFX for each scene
+            logger.info("\n[2/6] Generating audio and SFX for each scene...")
             audio_paths = self._generate_scene_audio(scenes)
+            sfx_paths = self._get_scene_sfx(scenes)
             
             if len(audio_paths) != len(scenes):
                 logger.error("Audio generation failed for some scenes")
@@ -88,11 +94,11 @@ class SceneBasedVideoOrchestrator:
                 logger.info("Generation stopped by user")
                 return None
             
-            logger.info(f"✓ Generated audio for {len(audio_paths)} scenes")
+            logger.info(f"✓ Generated audio/SFX for {len(audio_paths)} scenes")
             
             # Step 3: Get visuals for each scene
             logger.info("\n[3/6] Getting visuals for each scene...")
-            visual_paths_per_scene = self._get_scene_visuals(scenes)
+            visual_paths_per_scene = self._get_scene_visuals(scenes, orientation)
             
             if len(visual_paths_per_scene) != len(scenes):
                 logger.error("Visual generation failed for some scenes")
@@ -111,9 +117,11 @@ class SceneBasedVideoOrchestrator:
             rendered_video = self.video_editor.create_scene_based_video(
                 scenes=scenes,
                 audio_paths=audio_paths,
+                sfx_paths=sfx_paths,
                 visual_paths_per_scene=visual_paths_per_scene,
                 output_path=temp_video,
-                niche=niche
+                niche=niche,
+                orientation=orientation
             )
             
             if not rendered_video:
@@ -223,14 +231,26 @@ class SceneBasedVideoOrchestrator:
         
         return audio_paths
     
-    def _get_scene_visuals(self, scenes: List[Scene]) -> List[List[str]]:
+    def _get_scene_sfx(self, scenes: List[Scene]) -> List[str]:
+        """Fetch sound effects for each scene if specified."""
+        sfx_paths = []
+        for scene in scenes:
+            if scene.sfx_description:
+                logger.info(f"  Fetching SFX for scene {scene.scene_id}: {scene.sfx_description}")
+                path = self.sfx_gen.get_contextual_sfx(scene.sfx_description)
+                sfx_paths.append(path)
+            else:
+                sfx_paths.append(None)
+        return sfx_paths
+
+    def _get_scene_visuals(self, scenes: List[Scene], orientation: str) -> List[List[str]]:
         """Get visuals for each scene."""
         visual_paths_per_scene = []
         
         for scene in scenes:
             logger.info(f"  Getting visuals for scene {scene.scene_id}...")
             
-            visuals = self.visual_coordinator.get_visuals_for_scene(scene, min_visuals=2)
+            visuals = self.visual_coordinator.get_visuals_for_scene(scene, min_visuals=2, orientation=orientation)
             
             if visuals:
                 visual_paths_per_scene.append(visuals)

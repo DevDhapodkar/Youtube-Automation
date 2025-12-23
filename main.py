@@ -7,6 +7,7 @@ from src.trends.trend_analyzer import TrendAnalyzer
 from src.content.unified_generator import UnifiedContentGenerator
 from src.video.scene_based_orchestrator import SceneBasedVideoOrchestrator
 from src.upload.youtube_uploader import YouTubeUploader
+from src.content.thumbnail_generator import ThumbnailGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -35,15 +36,18 @@ def job_cycle():
         unified_gen = UnifiedContentGenerator()
         orchestrator = SceneBasedVideoOrchestrator()
         uploader = YouTubeUploader()
+        thumbnail_gen = ThumbnailGenerator()
 
         # Step 1 & 2: Content Generation (Optimized)
         logger.info("Step 1 & 2: Generating content...")
-        topic = trend_analyzer.select_topic()
+        niche, topic = trend_analyzer.select_niche_and_topic()
+        
         if not topic:
             logger.error("No topic selected. Aborting cycle.")
             return
 
-        content_data = unified_gen.generate_content_from_topic(topic, niche="general")
+        logger.info(f"Selected Niche: {niche}, Topic: {topic}")
+        content_data = unified_gen.generate_content_from_topic(topic, niche=niche)
         if not content_data:
             logger.error("Content generation failed. Aborting cycle.")
             return
@@ -60,22 +64,32 @@ def job_cycle():
         logger.info("Step 3: Creating video with scene-based system...")
         video_path = os.path.join(Config.ASSETS_DIR, "final_video.mp4")
         
+        # Determine orientation
+        # Default to portrait (shorts) unless explicitly long form
+        orientation = "portrait"
+        
         final_video = orchestrator.create_video(
             script=script,
             output_path=video_path,
             target_duration=60,  # 60 seconds for YouTube Shorts
-            niche="general",
-            pre_generated_scenes=pre_generated_scenes
+            niche=niche,
+            pre_generated_scenes=pre_generated_scenes,
+            orientation=orientation
         )
         
         # Step 4: Upload
         if final_video and os.path.exists(final_video):
             logger.info("Step 4: Uploading...")
-            # Generate description
-            description = f"An AI generated video about {topic}.\n\n#shorts #ai #facts"
-            tags = ["shorts", "ai", "facts", topic.split()[0]]
             
-            uploader.upload_video(final_video, viral_title, description, tags)
+            # Generate Thumbnail
+            logger.info("Generating thumbnail...")
+            thumbnail_path = thumbnail_gen.generate_thumbnail(topic, niche, viral_title)
+            
+            # Generate description and tags (with fallbacks)
+            description = content_data.get("description", f"An AI generated video about {topic}.\n\n#shorts #ai #facts")
+            tags = content_data.get("tags", ["shorts", "ai", "facts", topic.split()[0]])
+            
+            uploader.upload_video(final_video, viral_title, description, tags, thumbnail_path=thumbnail_path)
         else:
             logger.error("Video generation failed, skipping upload.")
         

@@ -19,6 +19,7 @@ class Scene:
     end_time: float
     keywords: List[str]
     visual_style: str  # "intro", "main", "climax", "conclusion"
+    sfx_description: str = None  # Contextual SFX description
 
 
 class SceneManager:
@@ -63,6 +64,12 @@ class SceneManager:
             logger.error("Script is empty or None")
             return []
             
+        # Ensure script is a string
+        if isinstance(script, list):
+            script = ' '.join(str(s) for s in script)
+        elif not isinstance(script, str):
+            script = str(script)
+            
         if pre_generated_scenes:
             logger.info("Using pre-generated scenes and keywords...")
             return self._create_scenes_from_pre_generated(pre_generated_scenes, target_duration)
@@ -80,7 +87,7 @@ class SceneManager:
         # Create Scene objects with timing
         scenes = self._create_scenes_with_timing(scene_groups, target_duration)
         
-        # Enhance with AI keywords if available
+        # Enhance with AI keywords if available and not already provided
         if self.model:
             scenes = self._enhance_scenes_with_ai(scenes)
         
@@ -107,8 +114,9 @@ class SceneManager:
                 duration=duration,
                 start_time=current_time,
                 end_time=current_time + duration,
-                keywords=s.get("keywords", []),
-                visual_style=self._determine_visual_style(idx, len(pre_generated_scenes))
+                keywords=self._ensure_list(s.get("keywords", [])),
+                visual_style=self._determine_visual_style(idx, len(pre_generated_scenes)),
+                sfx_description=s.get("sfx")
             )
             scenes.append(scene)
             current_time += duration
@@ -155,8 +163,8 @@ class SceneManager:
                 sid = str(scene.scene_id)
                 if sid in keywords_map:
                     # Combine AI keywords with existing ones (prioritizing AI)
-                    ai_keywords = keywords_map[sid]
-                    scene.keywords = ai_keywords + scene.keywords
+                    ai_keywords = self._ensure_list(keywords_map[sid])
+                    scene.keywords = ai_keywords + self._ensure_list(scene.keywords)
                     # Keep top 5
                     scene.keywords = scene.keywords[:5]
                     logger.info(f"  Scene {sid} AI keywords: {ai_keywords}")
@@ -169,6 +177,12 @@ class SceneManager:
 
     def _split_into_sentences(self, text: str) -> List[str]:
         """Split text into sentences."""
+        if not isinstance(text, str):
+            if isinstance(text, list):
+                text = ' '.join(str(s) for s in text)
+            else:
+                text = str(text)
+                
         # Remove extra whitespace
         text = ' '.join(text.split())
         
@@ -323,6 +337,18 @@ class SceneManager:
         keywords = [word for word, score in keywords[:max_keywords]]
         
         return keywords
+
+    def _ensure_list(self, data) -> List[str]:
+        """Ensures that the data is a list of strings."""
+        if isinstance(data, list):
+            # Ensure all elements are strings and not characters of a string
+            return [str(item) for item in data]
+        if isinstance(data, str):
+            # If it's a string, it might be comma-separated or just one keyword
+            if ',' in data:
+                return [s.strip() for s in data.split(',')]
+            return [data.strip()]
+        return []
     
     def _determine_visual_style(self, scene_index: int, total_scenes: int) -> str:
         """Determine the visual style for a scene based on its position."""
@@ -368,6 +394,8 @@ class SceneManager:
             summary += f"Scene {scene.scene_id} ({scene.visual_style.upper()})\n"
             summary += f"  Time: {scene.start_time:.1f}s - {scene.end_time:.1f}s ({scene.duration:.1f}s)\n"
             summary += f"  Keywords: {', '.join(scene.keywords)}\n"
+            if scene.sfx_description:
+                summary += f"  SFX: {scene.sfx_description}\n"
             summary += f"  Text: {scene.text[:80]}{'...' if len(scene.text) > 80 else ''}\n"
             summary += "\n"
         

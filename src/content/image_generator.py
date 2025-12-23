@@ -22,7 +22,7 @@ class ImageGenerator:
         else:
             self.client = None
     
-    def generate_image(self, prompt, niche, output_path):
+    def generate_image(self, prompt, niche, output_path, width=1080, height=1920):
         """
         Generate an image using Pollinations.ai (primary) or Gemini (fallback).
         """
@@ -43,7 +43,7 @@ class ImageGenerator:
         # Try Pollinations first (Free, no credit card)
         if self.use_pollinations:
             try:
-                return self._generate_pollinations(full_prompt, output_path)
+                return self._generate_pollinations(full_prompt, output_path, width, height)
             except Exception as e:
                 logger.warning(f"Pollinations generation failed: {e}. Trying fallback...")
         
@@ -57,20 +57,18 @@ class ImageGenerator:
         # Final fallback
         return self._generate_placeholder(niche, output_path)
 
-    def _generate_pollinations(self, prompt, output_path):
+    def _generate_pollinations(self, prompt, output_path, width=1080, height=1920):
         """
         Generate image using Pollinations.ai API.
         URL format: https://pollinations.ai/p/{prompt}?width={width}&height={height}&seed={seed}
         """
-        logger.info(f"Generating AI image with Pollinations.ai: {prompt[:100]}...")
+        logger.info(f"Generating AI image with Pollinations.ai: {prompt[:100]}... ({width}x{height})")
         
         # URL encode the prompt
         import urllib.parse
         encoded_prompt = urllib.parse.quote(prompt)
         
         seed = random.randint(0, 1000000)
-        width = 1080
-        height = 1920
         
         url = f"https://pollinations.ai/p/{encoded_prompt}?width={width}&height={height}&seed={seed}&model=flux"
         

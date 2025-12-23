@@ -27,7 +27,7 @@ class SceneVisualCoordinator:
         else:
             self.model = None
     
-    def get_visuals_for_scene(self, scene: Scene, min_visuals: int = 2) -> List[str]:
+    def get_visuals_for_scene(self, scene: Scene, min_visuals: int = 2, orientation: str = "portrait") -> List[str]:
         """
         Get appropriate visuals for a scene.
         
@@ -39,11 +39,12 @@ class SceneVisualCoordinator:
         Args:
             scene: Scene object with keywords and metadata
             min_visuals: Minimum number of visuals to return
+            orientation: "portrait" or "landscape"
             
         Returns:
             List of paths to visual files (videos/images)
         """
-        logger.info(f"Getting visuals for scene {scene.scene_id} ({scene.visual_style})")
+        logger.info(f"Getting visuals for scene {scene.scene_id} ({scene.visual_style}) - {orientation}")
         
         visuals = []
         
@@ -56,13 +57,13 @@ class SceneVisualCoordinator:
                 logger.info(f"✓ Added AI video for scene {scene.scene_id}")
         
         # Get stock videos based on keywords
-        stock_videos = self._get_stock_videos(scene, count=2)
+        stock_videos = self._get_stock_videos(scene, count=2, orientation=orientation)
         visuals.extend(stock_videos)
         
         # If we don't have enough visuals, add AI images
         if len(visuals) < min_visuals:
             needed = min_visuals - len(visuals)
-            ai_images = self._get_ai_images(scene, count=needed)
+            ai_images = self._get_ai_images(scene, count=needed, orientation=orientation)
             visuals.extend(ai_images)
         
         logger.info(f"Scene {scene.scene_id}: {len(visuals)} visuals ({self._count_types(visuals)})")
@@ -83,13 +84,20 @@ class SceneVisualCoordinator:
         
         return self.ai_video_gen.generate_video(prompt, output_path, duration=5)
     
-    def _get_stock_videos(self, scene: Scene, count: int = 2) -> List[str]:
+    def _get_stock_videos(self, scene: Scene, count: int = 2, orientation: str = "portrait") -> List[str]:
         """Get stock videos from Pexels."""
         # Use scene keywords for search
         queries = scene.keywords[:3]  # Top 3 keywords
         
-        if not queries or any(len(q) < 4 for q in queries):
-            # Refine queries if they are missing or too short/generic
+        # Only refine if keywords are very short/generic (e.g. all keywords are single words)
+        needs_refinement = True
+        if queries:
+            for q in queries:
+                if len(q.split()) >= 3: # If we have at least one descriptive phrase, skip refinement
+                    needs_refinement = False
+                    break
+        
+        if needs_refinement:
             logger.info(f"Refining search queries for scene {scene.scene_id}...")
             queries = self._refine_search_queries(scene)
         
@@ -102,16 +110,22 @@ class SceneVisualCoordinator:
                 queries=queries,
                 count=count,
                 duration_min=3,
-                orientation='portrait'
+                orientation=orientation
             )
             return videos if videos else []
         except Exception as e:
             logger.error(f"Stock video fetch failed: {e}")
             return []
     
-    def _get_ai_images(self, scene: Scene, count: int = 2) -> List[str]:
+    def _get_ai_images(self, scene: Scene, count: int = 2, orientation: str = "portrait") -> List[str]:
         """Get AI-generated images."""
         images = []
+        
+        # Set dimensions based on orientation
+        if orientation == "landscape":
+            width, height = 1920, 1080
+        else:
+            width, height = 1080, 1920
         
         for i, keyword in enumerate(scene.keywords[:count]):
             try:
@@ -125,7 +139,9 @@ class SceneVisualCoordinator:
                 # Generate image with Pollinations
                 image_path = self.visual_gen.image_gen.generate_image(
                     prompt=keyword,
-                    output_path=output_path
+                    output_path=output_path,
+                    width=width,
+                    height=height
                 )
                 
                 if image_path:

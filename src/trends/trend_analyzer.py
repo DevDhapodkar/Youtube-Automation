@@ -6,6 +6,9 @@ import random
 
 logger = logging.getLogger(__name__)
 
+import google.generativeai as genai
+import json
+
 class TrendAnalyzer:
     def __init__(self):
         self.pytrends = TrendReq(hl='en-US', tz=360)
@@ -14,6 +17,13 @@ class TrendAnalyzer:
             self.youtube = build('youtube', 'v3', developerKey=Config.YOUTUBE_API_KEY)
         else:
             logger.warning("YOUTUBE_API_KEY not found. YouTube specific trend data will be limited.")
+        
+        if Config.GEMINI_API_KEY:
+            genai.configure(api_key=Config.GEMINI_API_KEY)
+            self.model = genai.GenerativeModel('gemini-flash-latest')
+        else:
+            logger.error("GEMINI_API_KEY is missing. Trend analysis will be limited.")
+            self.model = None
 
     def get_google_trends(self, keywords=['technology', 'AI', 'future', 'gadgets']):
         """
@@ -21,7 +31,8 @@ class TrendAnalyzer:
         """
         try:
             logger.info(f"Fetching Google Trends for: {keywords}")
-            self.pytrends.build_payload(keywords, cat=0, timeframe='now 7-d', geo='', gprop='youtube')
+            # Locked to US (geo='US') and YouTube search (gprop='youtube')
+            self.pytrends.build_payload(keywords, cat=0, timeframe='now 7-d', geo='US', gprop='youtube')
             data = self.pytrends.interest_over_time()
             if not data.empty:
                 # Find the keyword with the highest recent interest
@@ -34,7 +45,7 @@ class TrendAnalyzer:
             logger.error(f"Error fetching Google Trends: {e}")
             return random.choice(keywords)
 
-    def get_youtube_trends(self, region_code='US', max_results=5):
+    def get_youtube_trends(self, region_code='US', max_results=10):
         """
         Fetch trending videos from YouTube directly.
         """
@@ -61,28 +72,67 @@ class TrendAnalyzer:
             logger.error(f"Error fetching YouTube Trends: {e}")
             return []
 
-    def select_topic(self, niche_keywords=None):
+    def analyze_trends_with_gemini(self, trends_list):
         """
-        Main method to decide on a video topic.
+        Uses Gemini to analyze trending titles and select the best niche/topic.
         """
-        if niche_keywords is None:
-            niche_keywords = ['Artificial Intelligence', 'Space Exploration', 'Coding', 'Tech News']
+        if not self.model or not trends_list:
+            return None
+
+        prompt = f"""
+        You are a YouTube Trend Analyst. Analyze these trending video titles:
+        {trends_list}
+        
+        Your Goal: Identify a "Blue Ocean" opportunity for the US MARKET - a niche/topic with high demand, high CPM (maximum money making potential), but low competition.
+        
+        1. Select the BEST niche from this list: ["horror", "history", "scp", "life_advice", "news", "finance", "tech", "luxury", "general"]
+           - CRITICAL: Prioritize high CPM niches like Finance, Tech, and Luxury to maximize revenue.
+           - Ensure the topic is highly relevant to US culture and trends.
+        2. Formulate a specific, viral topic based on the trends but adapted for the chosen niche.
+           - The topic must be "Clickbaity" and "High Engagement".
+        
+        Return ONLY a JSON object:
+        {{
+            "topic": "The New AI Model Everyone Is Talking About"
+        }}
+        
+        Return ONLY the JSON.
+        """
+
+        try:
+            response = self.model.generate_content(prompt)
+            text = response.text.strip()
             
-        # 1. Try to get a specific trending keyword from Google Trends
-        trending_keyword = self.get_google_trends(niche_keywords)
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+                
+            data = json.loads(text)
+            logger.info(f"Gemini selected niche: {data.get('niche')} with topic: {data.get('topic')}")
+            return data
+        except Exception as e:
+            logger.error(f"Gemini trend analysis failed: {e}")
+            return None
+
+    def select_niche_and_topic(self):
+        """
+        Main method to decide on a niche and video topic based on real-time trends.
+        """
+        # 1. Get real-time YouTube trends
+        yt_trends = self.get_youtube_trends(max_results=15)
         
-        # 2. Get general YouTube trends to see if we can piggyback (optional context)
-        yt_trends = self.get_youtube_trends()
+        # 2. Use Gemini to analyze and pick best niche/topic
+        if yt_trends:
+            analysis = self.analyze_trends_with_gemini(yt_trends)
+            if analysis:
+                return analysis.get("niche", "general"), analysis.get("topic", "Trending Topic")
         
-        # 3. Formulate a topic
-        # In a real scenario, we might use an LLM here to combine the trending keyword 
-        # with a viral structure. For now, we return the keyword.
-        
-        topic = f"The Future of {trending_keyword}"
-        logger.info(f"Selected Topic: {topic}")
-        return topic
+        # Fallback if API fails
+        logger.warning("Using fallback topic selection.")
+        return "general", "Interesting Facts You Didn't Know"
 
 if __name__ == "__main__":
     # Test
     analyzer = TrendAnalyzer()
-    print(analyzer.select_topic())
+    print(analyzer.select_niche_and_topic())

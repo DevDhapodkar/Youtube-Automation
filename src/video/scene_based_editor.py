@@ -25,8 +25,10 @@ class SceneBasedVideoEditor:
         scenes: List[Scene],
         audio_paths: List[str],
         visual_paths_per_scene: List[List[str]],
+        sfx_paths: List[str] = None,
         output_path: str = "final_video.mp4",
-        niche: str = "general"
+        niche: str = "general",
+        orientation: str = "portrait"  # "portrait" or "landscape"
     ) -> str:
         """
         Create video using scene-based approach.
@@ -37,12 +39,19 @@ class SceneBasedVideoEditor:
             visual_paths_per_scene: List of lists of visual paths (per scene)
             output_path: Final output video path
             niche: Visual style/niche for color grading
+            orientation: "portrait" (1080x1920) or "landscape" (1920x1080)
             
         Returns:
             Path to final video, or None if failed
         """
-        logger.info(f"Creating scene-based video with {len(scenes)} scenes")
+        logger.info(f"Creating scene-based video with {len(scenes)} scenes ({orientation})")
         
+        # Set resolution based on orientation
+        if orientation == "landscape":
+            self.resolution = (1920, 1080)
+        else:
+            self.resolution = (1080, 1920)
+            
         try:
             # Step 1: Render each scene individually
             scene_videos = []
@@ -53,6 +62,7 @@ class SceneBasedVideoEditor:
                     scene=scene,
                     audio_path=audio_paths[idx],
                     visual_paths=visual_paths_per_scene[idx],
+                    sfx_path=sfx_paths[idx] if sfx_paths else None,
                     niche=niche
                 )
                 
@@ -88,13 +98,11 @@ class SceneBasedVideoEditor:
         scene: Scene,
         audio_path: str,
         visual_paths: List[str],
-        niche: str
+        niche: str,
+        sfx_path: str = None
     ) -> str:
         """
         Render a single scene with audio, visuals, and subtitles.
-        
-        Returns:
-            Path to rendered scene video
         """
         scene_output = os.path.join(
             Config.ASSETS_DIR,
@@ -129,17 +137,34 @@ class SceneBasedVideoEditor:
             temp_video = os.path.join(Config.ASSETS_DIR, f"scene_{scene.scene_id}_temp.mp4")
             
             # Concatenate visuals and add audio
-            filter_chain = f"[0:v]setpts=PTS-STARTPTS,scale={self.resolution[0]}:{self.resolution[1]}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={self.resolution[0]}:{self.resolution[1]}[vcropped]"
+            width, height = self.resolution
             
+            # Audio complex filter if SFX is present
+            if sfx_path and os.path.exists(sfx_path):
+                # 0:v (visuals), 1:a (voice), 2:a (sfx)
+                audio_filter = "[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+                map_audio = "[aout]"
+                audio_inputs = ['-i', audio_path, '-i', sfx_path]
+            else:
+                audio_filter = None
+                map_audio = "1:a:0"
+                audio_inputs = ['-i', audio_path]
+                
+            filter_chain = f"[0:v]setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=increase[vscaled];[vscaled]{color_filter}[vgraded];[vgraded]crop={width}:{height}[vcropped]"
+            if audio_filter:
+                filter_complex = f"{filter_chain};{audio_filter}"
+            else:
+                filter_complex = filter_chain
+
             concat_cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
                 '-safe', '0',
-                '-i', concat_file,
-                '-i', audio_path,
-                '-filter_complex', filter_chain,
+                '-i', concat_file
+            ] + audio_inputs + [
+                '-filter_complex', filter_complex,
                 '-map', '[vcropped]',
-                '-map', '1:a:0',
+                '-map', map_audio,
                 '-t', str(duration),
                 '-c:v', 'libx264',
                 '-preset', 'fast',
@@ -155,12 +180,14 @@ class SceneBasedVideoEditor:
                 logger.error(f"Scene {scene.scene_id} video assembly failed: {result.stderr}")
                 return None
             
-            # Add subtitles (Hormozi Style: Yellow, Bold, Centered-ish)
-            # MarginV=250 moves it up from the bottom to avoid Shorts/Reels UI
+            # Add subtitles (Hormozi Style)
+            # Adjust MarginV based on resolution (lower for landscape)
+            margin_v = 150 if height == 1920 else 50
+            
             subtitle_cmd = [
                 'ffmpeg', '-y',
                 '-i', temp_video,
-                '-vf', f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,Alignment=2,MarginV=150,Bold=1'",
+                '-vf', f"subtitles={srt_path}:force_style='FontName=Arial,FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,Alignment=2,MarginV={margin_v},Bold=1'",
                 '-c:v', 'libx264',
                 '-preset', 'fast',
                 '-crf', '23',
@@ -192,10 +219,10 @@ class SceneBasedVideoEditor:
     
     def _process_visuals(self, visual_paths: List[str], scene_id: int) -> List[str]:
         """
-        Process visuals - normalize ALL inputs to target resolution/fps for reliable concatenation.
-        This fixes the 'video stuck' issue caused by mixing different resolutions/codecs.
+        Process visuals - normalize ALL inputs to target resolution/fps.
         """
         processed = []
+        width, height = self.resolution
         
         for idx, visual_path in enumerate(visual_paths):
             output_name = f"scene_{scene_id}_norm_{idx}.mp4"
@@ -214,7 +241,7 @@ class SceneBasedVideoEditor:
                     'ffmpeg', '-y',
                     '-loop', '1',
                     '-i', visual_path,
-                    '-vf', f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0015,1.5)':d=150:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920",
+                    '-vf', f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},zoompan=z='min(zoom+0.0015,1.5)':d=150:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}",
                     '-t', '5',
                     '-r', str(self.fps),
                     '-c:v', 'libx264',
@@ -226,7 +253,7 @@ class SceneBasedVideoEditor:
                 cmd = [
                     'ffmpeg', '-y',
                     '-i', visual_path,
-                    '-vf', f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+                    '-vf', f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}",
                     '-r', str(self.fps),
                     '-c:v', 'libx264',
                     '-pix_fmt', 'yuv420p',

@@ -20,8 +20,18 @@ function App() {
     const [showSettings, setShowSettings] = useState(false);
     const [selectedNiche, setSelectedNiche] = useState('general');
     const [schedule, setSchedule] = useState([]);
+    const [dailyShortCount, setDailyShortCount] = useState(2);
+    const [dailyLongCount, setDailyLongCount] = useState(1);
+    const [authUrl, setAuthUrl] = useState(null);
     const [newTime, setNewTime] = useState('');
     const logsEndRef = useRef(null);
+
+    // Manual Order State
+    const [orderNiche, setOrderNiche] = useState('general');
+    const [orderTopic, setOrderTopic] = useState('');
+    const [orderType, setOrderType] = useState('portrait'); // portrait | landscape
+    const [orderDuration, setOrderDuration] = useState(60);
+    const [isOrdering, setIsOrdering] = useState(false);
 
     const niches = [
         { value: 'general', label: '🎬 General/Trending', desc: 'Viral curiosity content' },
@@ -48,6 +58,8 @@ function App() {
                 setIsAuthenticated(data.is_authenticated);
                 setSelectedNiche(data.niche || 'general');
                 setSchedule(data.schedule || []);
+                setDailyShortCount(data.daily_short_count !== undefined ? data.daily_short_count : 2);
+                setDailyLongCount(data.daily_long_count !== undefined ? data.daily_long_count : 1);
             });
     }, []);
 
@@ -62,6 +74,9 @@ function App() {
                 setIsRunning(msg.data.is_running);
             } else if (msg.type === 'error') {
                 setLogs((prev) => [...prev, `ERROR: ${msg.data}`]);
+            } else if (msg.type === 'auth_url') {
+                setAuthUrl(msg.data);
+                setLogs((prev) => [...prev, "Received Auth URL. Please check the popup."]);
             }
         }
     }, [lastMessage]);
@@ -111,7 +126,12 @@ function App() {
             const res = await fetch('http://localhost:8000/update_config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ niche: selectedNiche, schedule })
+                body: JSON.stringify({
+                    niche: selectedNiche,
+                    schedule,
+                    daily_short_count: parseInt(dailyShortCount),
+                    daily_long_count: parseInt(dailyLongCount)
+                })
             });
             const data = await res.json();
             setLogs(prev => [...prev, `Config updated: ${data.message}`]);
@@ -130,6 +150,39 @@ function App() {
 
     const removeScheduleTime = (time) => {
         setSchedule(schedule.filter(t => t !== time));
+    };
+
+    const handleOrderVideo = async () => {
+        if (isRunning || isOrdering) return;
+
+        setIsOrdering(true);
+        try {
+            const res = await fetch('http://localhost:8000/order_video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    niche: orderNiche,
+                    topic: orderTopic || null,
+                    orientation: orderType,
+                    duration: parseInt(orderDuration),
+                    upload: true
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setLogs(prev => [...prev, "✅ Order received! Starting generation..."]);
+            } else {
+                setLogs(prev => [...prev, `❌ Error: ${data.message}`]);
+                setIsOrdering(false);
+            }
+        } catch (e) {
+            console.error(e);
+            setLogs(prev => [...prev, "❌ Network Error"]);
+            setIsOrdering(false);
+        }
+
+        // Reset ordering state after a delay or let the logs/status handle it
+        setTimeout(() => setIsOrdering(false), 2000);
     };
 
     return (
@@ -181,7 +234,7 @@ function App() {
                         </motion.div>
                         <div>
                             <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white drop-shadow-lg">
-                                YouTube Automation
+                                YouTube Automation <span className="text-sm bg-crimson-500 px-2 py-1 rounded-full align-top ml-2">v1.1</span>
                             </h1>
                             <div className="flex items-center gap-3 mt-2">
                                 <motion.div
@@ -388,6 +441,123 @@ function App() {
                             </motion.div>
                         </div>
                     </motion.div>
+
+                    {/* Create Video Card */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.35 }}
+                        className="lg:col-span-3 glass rounded-3xl p-8 border border-white/20 relative overflow-hidden"
+                    >
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Sparkles className="w-32 h-32 text-crimson-500" />
+                        </div>
+
+                        <h3 className="font-black text-2xl flex items-center gap-3 text-white mb-6 relative z-10">
+                            <Sparkles className="w-7 h-7 text-crimson-400" />
+                            Create Custom Video
+                        </h3>
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
+                            {/* Niche */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-gray-400">Niche</label>
+                                <select
+                                    value={orderNiche}
+                                    onChange={(e) => setOrderNiche(e.target.value)}
+                                    className="w-full p-3 bg-dark-800 border border-white/10 rounded-xl text-white focus:border-crimson-500 focus:outline-none"
+                                >
+                                    {niches.map(n => (
+                                        <option key={n.value} value={n.value}>{n.label}</option>
+                                    ))}
+                                    <option value="custom">Custom Niche</option>
+                                </select>
+                            </div>
+
+                            {/* Topic */}
+                            <div className="space-y-2 md:col-span-2">
+                                <label className="text-sm font-bold text-gray-400">Topic (Optional)</label>
+                                <input
+                                    type="text"
+                                    placeholder="Leave empty for AI viral topic..."
+                                    value={orderTopic}
+                                    onChange={(e) => setOrderTopic(e.target.value)}
+                                    className="w-full p-3 bg-dark-800 border border-white/10 rounded-xl text-white focus:border-crimson-500 focus:outline-none"
+                                >
+                                </input>
+                            </div>
+
+                            {/* Type & Action */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-gray-400">Format</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => { setOrderType('portrait'); setOrderDuration(60); }}
+                                        className={cn(
+                                            "flex-1 p-3 rounded-xl font-bold text-sm transition-all border",
+                                            orderType === 'portrait'
+                                                ? "bg-crimson-500 border-crimson-400 text-white shadow-glow-red"
+                                                : "bg-dark-800 border-white/10 text-gray-400 hover:bg-dark-700"
+                                        )}
+                                    >
+                                        Shorts
+                                    </button>
+                                    <button
+                                        onClick={() => { setOrderType('landscape'); setOrderDuration(300); }}
+                                        className={cn(
+                                            "flex-1 p-3 rounded-xl font-bold text-sm transition-all border",
+                                            orderType === 'landscape'
+                                                ? "bg-crimson-500 border-crimson-400 text-white shadow-glow-red"
+                                                : "bg-dark-800 border-white/10 text-gray-400 hover:bg-dark-700"
+                                        )}
+                                    >
+                                        Long
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Duration */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-bold text-gray-400">Target Duration</label>
+                                <select
+                                    value={orderDuration}
+                                    onChange={(e) => setOrderDuration(e.target.value)}
+                                    className="w-full p-3 bg-dark-800 border border-white/10 rounded-xl text-white focus:border-crimson-500 focus:outline-none"
+                                >
+                                    <option value="60">Short (&lt; 1 min)</option>
+                                    <option value="90">1 - 2 mins</option>
+                                    <option value="150">2 - 3 mins</option>
+                                    <option value="240">3 - 5 mins</option>
+                                    <option value="390">5 - 8 mins</option>
+                                    <option value="540">8 - 10 mins</option>
+                                    <option value="900">10+ mins</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end relative z-10">
+                            <motion.button
+                                onClick={handleOrderVideo}
+                                disabled={isRunning || isOrdering}
+                                className={cn(
+                                    "px-8 py-3 rounded-xl font-black text-lg flex items-center gap-2 transition-all",
+                                    isRunning || isOrdering
+                                        ? "bg-gray-600 text-gray-400 cursor-not-allowed"
+                                        : "bg-gradient-to-r from-crimson-500 to-rose-600 text-white shadow-lg hover:shadow-glow-red hover:scale-105"
+                                )}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                {isRunning || isOrdering ? (
+                                    <>Processing...</>
+                                ) : (
+                                    <>
+                                        <Zap className="w-5 h-5" />
+                                        Generate Now
+                                    </>
+                                )}
+                            </motion.button>
+                        </div>
+                    </motion.div>
                 </div>
 
                 {/* Terminal / Logs */}
@@ -551,6 +721,40 @@ function App() {
                                     </div>
                                 </div>
 
+                                {/* Daily Limits Configuration */}
+                                <div className="p-6 glass rounded-2xl border border-white/20">
+                                    <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                                        📊 Daily Video Limits
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-gray-400 text-sm font-semibold mb-2">Daily Shorts</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="10"
+                                                value={dailyShortCount}
+                                                onChange={(e) => setDailyShortCount(e.target.value)}
+                                                className="w-full p-4 bg-dark-800 border-2 border-white/20 rounded-xl text-white font-mono focus:border-crimson-500 focus:outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-gray-400 text-sm font-semibold mb-2">Daily Long Videos</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="5"
+                                                value={dailyLongCount}
+                                                onChange={(e) => setDailyLongCount(e.target.value)}
+                                                className="w-full p-4 bg-dark-800 border-2 border-white/20 rounded-xl text-white font-mono focus:border-crimson-500 focus:outline-none transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-gray-400 text-sm mt-3">
+                                        The agent will generate this many videos each time the schedule triggers.
+                                    </p>
+                                </div>
+
                                 <div className="p-6 glass-red rounded-2xl border border-crimson-500/30">
                                     <h3 className="text-xl font-bold text-white mb-4">⚙️ API Configuration</h3>
                                     <p className="text-gray-300 text-sm mb-4">
@@ -576,8 +780,57 @@ function App() {
                         </motion.div>
                     </motion.div>
                 )}
+                {/* Auth URL Modal */}
+                <AnimatePresence>
+                    {authUrl && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[60] p-4"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
+                                className="glass border-2 border-crimson-500 rounded-3xl p-8 max-w-xl w-full text-center space-y-6 shadow-glow-red-lg"
+                            >
+                                <div className="w-16 h-16 bg-crimson-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Youtube className="w-8 h-8 text-crimson-500" />
+                                </div>
+
+                                <h2 className="text-2xl font-black text-white">
+                                    Authentication Required
+                                </h2>
+
+                                <p className="text-gray-300">
+                                    Please authorize the application to access your YouTube channel.
+                                    Click the button below to open the Google login page.
+                                </p>
+
+                                <a
+                                    href={authUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block w-full py-4 bg-gradient-red hover:shadow-glow-red rounded-xl text-lg font-bold text-white transition-all transform hover:scale-105"
+                                    onClick={() => setAuthUrl(null)}
+                                >
+                                    Authorize with Google
+                                </a>
+
+                                <button
+                                    onClick={() => setAuthUrl(null)}
+                                    className="text-gray-500 hover:text-white text-sm font-semibold transition-colors"
+                                >
+                                    Close / Already Authorized
+                                </button>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
             </AnimatePresence>
-        </div>
+        </div >
     );
 }
 

@@ -10,13 +10,71 @@ class SoundEffectGenerator:
     Manages ambient sound effects for videos using Freesound API.
     """
     def __init__(self):
-        self.api_key = os.getenv("FREESOUND_API_KEY", "")
+        self.api_key = Config.FREESOUND_API_KEY
         self.base_url = "https://freesound.org/apiv2/search/text/"
         self.sfx_dir = os.path.join(Config.ASSETS_DIR, "sfx")
         
         if not os.path.exists(self.sfx_dir):
             os.makedirs(self.sfx_dir)
     
+    def get_contextual_sfx(self, sfx_description):
+        """
+        Search and download a specific contextual sound effect.
+        """
+        if not sfx_description or not self.api_key:
+            return None
+            
+        try:
+            # Clean description for filename
+            safe_desc = "".join([c for c in sfx_description if c.isalnum()]).lower()
+            file_path = os.path.join(self.sfx_dir, f"context_{safe_desc}.mp3")
+            
+            if os.path.exists(file_path):
+                return file_path
+                
+            logger.info(f"Searching Freesound for contextual SFX: {sfx_description}")
+            
+            params = {
+                "query": sfx_description,
+                "filter": "duration:[0.1 TO 15]", # Broaden duration, remove type:mp3
+                "sort": "relevance",
+                "page_size": 5,
+                "fields": "id,name,previews",
+                "token": self.api_key
+            }
+            
+            response = requests.get(self.base_url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Fallback if no results: try simplifying the query
+            if not data.get("results") and " " in sfx_description:
+                simplified_query = sfx_description.split()[-1] # Try last word
+                logger.info(f"No SFX results for '{sfx_description}', trying fallback: '{simplified_query}'")
+                params["query"] = simplified_query
+                response = requests.get(self.base_url, params=params, timeout=10)
+                data = response.json()
+
+            if data.get("results"):
+                sound = data["results"][0] # Take the best match
+                previews = sound.get("previews", {})
+                preview_url = previews.get("preview-hq-mp3") or previews.get("preview-lq-mp3")
+                
+                if preview_url:
+                    logger.info(f"Downloading SFX: {sfx_description} from {preview_url}")
+                    audio_response = requests.get(preview_url, timeout=30)
+                    audio_response.raise_for_status()
+                    
+                    with open(file_path, 'wb') as f:
+                        f.write(audio_response.content)
+                        
+                    return file_path
+                    
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get contextual SFX '{sfx_description}': {e}")
+            return None
+
     def get_ambient_sound(self, niche):
         """
         Get appropriate ambient sound for the niche from Freesound.
@@ -64,9 +122,9 @@ class SoundEffectGenerator:
             # Search for sound effects
             params = {
                 "query": query,
-                "filter": "duration:[20 TO 180] type:mp3",  # 20-180 second MP3 files
-                "sort": "rating_desc",  # Highest rated first (better quality than downloads)
-                "page_size": 20, # Get top 20
+                "filter": "duration:[20 TO 300]",  # 20-300 second files
+                "sort": "rating_desc",  # Highest rated first
+                "page_size": 20, 
                 "fields": "id,name,previews,username",
                 "token": self.api_key
             }

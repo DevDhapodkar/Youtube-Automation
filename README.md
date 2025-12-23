@@ -7,6 +7,8 @@ This agent automates the entire process of running a faceless YouTube channel, f
 1.  **Python 3.10+**
 2.  **FFmpeg** (Required by MoviePy)
     - Mac: `brew install ffmpeg`
+    - Windows: `winget install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
+    - Linux: `sudo apt install ffmpeg`
 3.  **API Keys** (See Configuration)
 
 ## Installation
@@ -35,6 +37,18 @@ This agent automates the entire process of running a faceless YouTube channel, f
 ## Running the Agent
 
 Start the agent:
+
+**Mac/Linux:**
+```bash
+./start.sh
+```
+
+**Windows:**
+```batch
+start.bat
+```
+
+Alternatively, run only the backend:
 ```bash
 python main.py
 ```
@@ -45,12 +59,15 @@ python main.py
 
 ## Features
 
+- **SEO Optimization**: AI generates viral descriptions, high-CPM tags, and clickbait titles automatically.
+- **Batched AI Logic**: Optimized to use only 1 Gemini API call per video, making the free tier highly viable.
 - **Trend Analysis**: Checks Google Trends and YouTube for viral topics.
-- **Scripting**: Uses Gemini Pro to write engaging scripts.
-- **Voice**: Uses Microsoft Edge TTS for high-quality neural voiceovers.
-- **Visuals**: Fetches stock footage from Pexels.
-- **Editing**: Assembles video with subtitles using MoviePy.
-- **Upload**: Uploads to YouTube as a Private video (configurable).
+- **Scripting**: Uses Gemini to write engaging, high-retention scripts.
+- **Voice**: Uses ElevenLabs or Microsoft Edge TTS for natural voiceovers.
+- **Visuals**: Mix of AI-generated videos (LTX-Video) and high-quality stock footage from Pexels.
+- **Editing**: Professional scene-based assembly with transitions and synced subtitles.
+- **Thumbnails**: Robust fallback system: Pollinations → HF FLUX → Solid Color.
+- **Upload**: Automated YouTube upload with full metadata support.
 
 ## Troubleshooting
 
